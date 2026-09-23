@@ -12,7 +12,7 @@ Full definitions of done are in [CLAUDE.md](CLAUDE.md).
 
 - [x] CP0 Repo skeleton + tooling
 - [x] CP1 Event schema (protobuf)
-- [ ] CP2 Local store (SQLite WAL, retention)
+- [x] CP2 Local store (SQLite WAL, retention)
 - [ ] CP3 Collector
 - [ ] CP4 Service discovery + health probes
 - [ ] CP5 Log tail

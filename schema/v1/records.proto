@@ -76,3 +76,13 @@ message Incident {
   string summary = 5;
   uint64 opened_hlc = 6;
 }
+
+// Record is the unit stored in the sync spool and sent over the wire.
+message Record {
+  oneof body {
+    Sample sample = 1;
+    Event event = 2;
+    ProbeResult probe_result = 3;
+    Incident incident = 4;
+  }
+}

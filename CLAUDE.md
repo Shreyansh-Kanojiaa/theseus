@@ -50,6 +50,12 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
 - HLC is a uint64: unix ms << 16 | logical. Compare as integers. `schemav1.Clock` issues them.
 - `agent.Stamper` assigns node_id/seq/hlc and fsyncs the last seq+hlc before returning, so
   seq and hlc survive restarts and wall-clock resets. Stamp in batches (two fsyncs per call).
+- `agent.Store` (SQLite, pure-Go `modernc.org/sqlite`, WAL): `Append(records...)` is the only
+  write path. It stamps, then writes each record to `samples` or `events` and to `spool` in
+  one transaction. `schemav1.Record` is the oneof envelope stored in the spool and sent on
+  the wire. `Prune`/`RunRetention` age out samples and events (7 days); the spool is only
+  drained by sync acks. Retention relies on hlc rising with seq (see `Prune`).
+- Record numbers in BENCHMARKS.md with the command that reproduces them. `make bench`.
 
 ## Month 1 checkpoints
 

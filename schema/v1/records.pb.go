@@ -585,6 +585,121 @@ func (x *Incident) GetOpenedHlc() uint64 {
 	return 0
 }
 
+// Record is the unit stored in the sync spool and sent over the wire.
+type Record struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Body:
+	//
+	//	*Record_Sample
+	//	*Record_Event
+	//	*Record_ProbeResult
+	//	*Record_Incident
+	Body          isRecord_Body `protobuf_oneof:"body"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Record) Reset() {
+	*x = Record{}
+	mi := &file_schema_v1_records_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Record) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Record) ProtoMessage() {}
+
+func (x *Record) ProtoReflect() protoreflect.Message {
+	mi := &file_schema_v1_records_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Record.ProtoReflect.Descriptor instead.
+func (*Record) Descriptor() ([]byte, []int) {
+	return file_schema_v1_records_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Record) GetBody() isRecord_Body {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *Record) GetSample() *Sample {
+	if x != nil {
+		if x, ok := x.Body.(*Record_Sample); ok {
+			return x.Sample
+		}
+	}
+	return nil
+}
+
+func (x *Record) GetEvent() *Event {
+	if x != nil {
+		if x, ok := x.Body.(*Record_Event); ok {
+			return x.Event
+		}
+	}
+	return nil
+}
+
+func (x *Record) GetProbeResult() *ProbeResult {
+	if x != nil {
+		if x, ok := x.Body.(*Record_ProbeResult); ok {
+			return x.ProbeResult
+		}
+	}
+	return nil
+}
+
+func (x *Record) GetIncident() *Incident {
+	if x != nil {
+		if x, ok := x.Body.(*Record_Incident); ok {
+			return x.Incident
+		}
+	}
+	return nil
+}
+
+type isRecord_Body interface {
+	isRecord_Body()
+}
+
+type Record_Sample struct {
+	Sample *Sample `protobuf:"bytes,1,opt,name=sample,proto3,oneof"`
+}
+
+type Record_Event struct {
+	Event *Event `protobuf:"bytes,2,opt,name=event,proto3,oneof"`
+}
+
+type Record_ProbeResult struct {
+	ProbeResult *ProbeResult `protobuf:"bytes,3,opt,name=probe_result,json=probeResult,proto3,oneof"`
+}
+
+type Record_Incident struct {
+	Incident *Incident `protobuf:"bytes,4,opt,name=incident,proto3,oneof"`
+}
+
+func (*Record_Sample) isRecord_Body() {}
+
+func (*Record_Event) isRecord_Body() {}
+
+func (*Record_ProbeResult) isRecord_Body() {}
+
+func (*Record_Incident) isRecord_Body() {}
+
 var File_schema_v1_records_proto protoreflect.FileDescriptor
 
 const file_schema_v1_records_proto_rawDesc = "" +
@@ -631,7 +746,13 @@ const file_schema_v1_records_proto_rawDesc = "" +
 	"\aservice\x18\x04 \x01(\tR\aservice\x12\x18\n" +
 	"\asummary\x18\x05 \x01(\tR\asummary\x12\x1d\n" +
 	"\n" +
-	"opened_hlc\x18\x06 \x01(\x04R\topenedHlc*y\n" +
+	"opened_hlc\x18\x06 \x01(\x04R\topenedHlc\"\xd7\x01\n" +
+	"\x06Record\x12+\n" +
+	"\x06sample\x18\x01 \x01(\v2\x11.schema.v1.SampleH\x00R\x06sample\x12(\n" +
+	"\x05event\x18\x02 \x01(\v2\x10.schema.v1.EventH\x00R\x05event\x12;\n" +
+	"\fprobe_result\x18\x03 \x01(\v2\x16.schema.v1.ProbeResultH\x00R\vprobeResult\x121\n" +
+	"\bincident\x18\x04 \x01(\v2\x13.schema.v1.IncidentH\x00R\bincidentB\x06\n" +
+	"\x04body*y\n" +
 	"\bPriority\x12\x18\n" +
 	"\x14PRIORITY_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fPRIORITY_METRIC\x10\x01\x12\x12\n" +
@@ -662,7 +783,7 @@ func file_schema_v1_records_proto_rawDescGZIP() []byte {
 }
 
 var file_schema_v1_records_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_schema_v1_records_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_schema_v1_records_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_schema_v1_records_proto_goTypes = []any{
 	(Priority)(0),       // 0: schema.v1.Priority
 	(ProbeType)(0),      // 1: schema.v1.ProbeType
@@ -672,24 +793,29 @@ var file_schema_v1_records_proto_goTypes = []any{
 	(*Event)(nil),       // 5: schema.v1.Event
 	(*ProbeResult)(nil), // 6: schema.v1.ProbeResult
 	(*Incident)(nil),    // 7: schema.v1.Incident
-	nil,                 // 8: schema.v1.Sample.LabelsEntry
-	nil,                 // 9: schema.v1.Event.AttrsEntry
+	(*Record)(nil),      // 8: schema.v1.Record
+	nil,                 // 9: schema.v1.Sample.LabelsEntry
+	nil,                 // 10: schema.v1.Event.AttrsEntry
 }
 var file_schema_v1_records_proto_depIdxs = []int32{
-	0, // 0: schema.v1.Header.priority:type_name -> schema.v1.Priority
-	3, // 1: schema.v1.Sample.header:type_name -> schema.v1.Header
-	8, // 2: schema.v1.Sample.labels:type_name -> schema.v1.Sample.LabelsEntry
-	3, // 3: schema.v1.Event.header:type_name -> schema.v1.Header
-	9, // 4: schema.v1.Event.attrs:type_name -> schema.v1.Event.AttrsEntry
-	3, // 5: schema.v1.ProbeResult.header:type_name -> schema.v1.Header
-	1, // 6: schema.v1.ProbeResult.type:type_name -> schema.v1.ProbeType
-	3, // 7: schema.v1.Incident.header:type_name -> schema.v1.Header
-	2, // 8: schema.v1.Incident.state:type_name -> schema.v1.IncidentState
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	0,  // 0: schema.v1.Header.priority:type_name -> schema.v1.Priority
+	3,  // 1: schema.v1.Sample.header:type_name -> schema.v1.Header
+	9,  // 2: schema.v1.Sample.labels:type_name -> schema.v1.Sample.LabelsEntry
+	3,  // 3: schema.v1.Event.header:type_name -> schema.v1.Header
+	10, // 4: schema.v1.Event.attrs:type_name -> schema.v1.Event.AttrsEntry
+	3,  // 5: schema.v1.ProbeResult.header:type_name -> schema.v1.Header
+	1,  // 6: schema.v1.ProbeResult.type:type_name -> schema.v1.ProbeType
+	3,  // 7: schema.v1.Incident.header:type_name -> schema.v1.Header
+	2,  // 8: schema.v1.Incident.state:type_name -> schema.v1.IncidentState
+	4,  // 9: schema.v1.Record.sample:type_name -> schema.v1.Sample
+	5,  // 10: schema.v1.Record.event:type_name -> schema.v1.Event
+	6,  // 11: schema.v1.Record.probe_result:type_name -> schema.v1.ProbeResult
+	7,  // 12: schema.v1.Record.incident:type_name -> schema.v1.Incident
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_schema_v1_records_proto_init() }
@@ -697,13 +823,19 @@ func file_schema_v1_records_proto_init() {
 	if File_schema_v1_records_proto != nil {
 		return
 	}
+	file_schema_v1_records_proto_msgTypes[5].OneofWrappers = []any{
+		(*Record_Sample)(nil),
+		(*Record_Event)(nil),
+		(*Record_ProbeResult)(nil),
+		(*Record_Incident)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_schema_v1_records_proto_rawDesc), len(file_schema_v1_records_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

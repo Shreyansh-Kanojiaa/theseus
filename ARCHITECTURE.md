@@ -41,6 +41,14 @@ Rule engine → dependency graph (≤8 candidate causes) → Laya (calibrated ch
 p ≥ 0.85, reversible actions only) → on-demand LLM → human. One deterministic executor
 performs and verifies every action; a failed verification rolls back and escalates.
 
+## Local store
+
+SQLite in WAL mode (`agent/store.go`), one file per node. `samples` and `events` (which
+also holds probe results and incidents) serve local queries and are pruned after 7 days.
+`spool` holds every record as an encoded `Record` until the control plane acknowledges
+it; age never removes spool rows. A record is written to its table and the spool in one
+transaction, so a crash cannot leave one without the other.
+
 ## Sync
 
 Connected → Buffering → Handshake (watermark) → Replay (resumable, priority-ordered) →

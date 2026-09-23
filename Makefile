@@ -1,7 +1,7 @@
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 BUF := go run github.com/bufbuild/buf/cmd/buf@v1.73.0
 
-.PHONY: build test lint gen
+.PHONY: build test lint gen bench
 
 build:
 	go build ./...
@@ -15,3 +15,6 @@ lint:
 
 gen:
 	$(BUF) generate
+
+bench:
+	go test -run='^$$' -bench=. -benchtime=3x ./...
