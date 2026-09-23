@@ -27,3 +27,7 @@ make gen    # after editing schema/v1/records.proto
 | `chaos/`        | Fault injection and ground-truth labels            |
 | `dashboard/`    | Grafana dashboards, provisioned as code            |
 | `controlplane/` | Optional control plane                             |
+
+## License
+
+[Apache 2.0](LICENSE).
