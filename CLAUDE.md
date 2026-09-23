@@ -41,6 +41,15 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
 - Go, single module `github.com/Shreyansh-Kanojiaa/theseus`, one package dir per module.
 - `make build test lint` must stay green; CI runs exactly that.
 - Package `sync` shadows stdlib: import stdlib as `gosync "sync"` inside it if needed.
+- Records live in `schema/v1/records.proto` (Go package `schemav1`). Edit the proto, then
+  `make gen`; generated code is committed and CI fails if it is stale. Only add fields,
+  never renumber or reuse tags. `buf lint` runs as part of `make lint`.
+- Every record has a `Header`: node_id, seq, hlc, priority. seq is one per-node counter
+  shared by all record types and is **never reused**; gaps are allowed (crash, downsampling),
+  so sync must not assume contiguity without the node declaring dropped ranges.
+- HLC is a uint64: unix ms << 16 | logical. Compare as integers. `schemav1.Clock` issues them.
+- `agent.Stamper` assigns node_id/seq/hlc and fsyncs the last seq+hlc before returning, so
+  seq and hlc survive restarts and wall-clock resets. Stamp in batches (two fsyncs per call).
 
 ## Month 1 checkpoints
 

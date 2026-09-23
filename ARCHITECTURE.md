@@ -20,9 +20,20 @@ control plane to keep running.
 
 ## Records
 
-Every record carries `node_id`, a persisted monotonic `seq`, a hybrid logical clock
-timestamp and a priority (incident > action > event > metric). Dedupe is on
-`(node_id, seq)`; fleet ordering is by HLC, so a late node cannot rewrite history.
+Schema: `schema/v1/records.proto` defines `Sample`, `Event`, `ProbeResult` and `Incident`.
+Every record carries a `Header`:
+
+| Field      | Meaning                                                                       |
+|------------|-------------------------------------------------------------------------------|
+| `node_id`  | Originating node                                                              |
+| `seq`      | Per-node counter shared by all record types. Never reused; gaps allowed.      |
+| `hlc`      | Hybrid logical clock, `unix_ms << 16 \| logical`, compares as an integer      |
+| `priority` | incident > action > event > metric; the sync drain order                      |
+
+Dedupe is on `(node_id, seq)`; fleet ordering is by HLC, so a late node cannot rewrite
+history. The agent persists the last seq and HLC before using them, so neither repeats
+after a restart, a kill -9 or a node booting with a stale wall clock. An incident is a
+series of records sharing `incident_id`, one per state change.
 
 ## Recovery ladder (TCRA)
 

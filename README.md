@@ -13,6 +13,7 @@ Requires Go (version in `go.mod`).
 
 ```sh
 make build test lint
+make gen    # after editing schema/v1/records.proto
 ```
 
 ## Layout

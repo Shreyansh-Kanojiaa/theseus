@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package schema.v1;
+
+option go_package = "github.com/Shreyansh-Kanojiaa/theseus/schema/v1;schemav1";
+
+// Priority orders the sync drain. Higher value drains first.
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  PRIORITY_METRIC = 1;
+  PRIORITY_EVENT = 2;
+  PRIORITY_ACTION = 3;
+  PRIORITY_INCIDENT = 4;
+}
+
+// Header is carried by every record.
+message Header {
+  string node_id = 1;
+  // Per-node, shared by all record types, never reused. Gaps are allowed
+  // (crash between reserve and write, downsampling). (node_id, seq) is the dedupe key.
+  uint64 seq = 2;
+  // Hybrid logical clock: unix milliseconds << 16 | logical counter.
+  uint64 hlc = 3;
+  Priority priority = 4;
+}
+
+message Sample {
+  Header header = 1;
+  string name = 2;
+  map<string, string> labels = 3;
+  double value = 4;
+}
+
+message Event {
+  Header header = 1;
+  // e.g. "probe_fail", "log_match", "alert", "container_state".
+  string kind = 2;
+  // Service or container the event is about.
+  string source = 3;
+  string message = 4;
+  map<string, string> attrs = 5;
+}
+
+enum ProbeType {
+  PROBE_TYPE_UNSPECIFIED = 0;
+  PROBE_TYPE_HTTP = 1;
+  PROBE_TYPE_TCP = 2;
+  PROBE_TYPE_EXEC = 3;
+}
+
+message ProbeResult {
+  Header header = 1;
+  string target = 2;
+  ProbeType type = 3;
+  // e.g. "http://:9090/-/healthy".
+  string endpoint = 4;
+  bool ok = 5;
+  uint64 latency_us = 6;
+  string error = 7;
+  uint32 consecutive_failures = 8;
+}
+
+enum IncidentState {
+  INCIDENT_STATE_UNSPECIFIED = 0;
+  INCIDENT_STATE_OPEN = 1;
+  INCIDENT_STATE_RESOLVED = 2;
+  INCIDENT_STATE_ESCALATED = 3;
+}
+
+// One record per state change; incident_id ties the versions together.
+message Incident {
+  Header header = 1;
+  string incident_id = 2;
+  IncidentState state = 3;
+  string service = 4;
+  string summary = 5;
+  uint64 opened_hlc = 6;
+}
