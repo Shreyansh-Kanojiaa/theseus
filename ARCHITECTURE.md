@@ -41,6 +41,20 @@ Rule engine → dependency graph (≤8 candidate causes) → Laya (calibrated ch
 p ≥ 0.85, reversible actions only) → on-demand LLM → human. One deterministic executor
 performs and verifies every action; a failed verification rolls back and escalates.
 
+## Collector
+
+`cmd/theseus-agent` runs one loop per source, each on its own interval, each appending
+one batch per round (`agent.Collect`):
+
+- host: CPU, memory, disk and network read straight from procfs and `statfs`
+  (`host_*`); `-proc` points at the host's `/proc` when the agent is containerised.
+- docker: `container_running{container,image,state}` from the Engine API over the unix
+  socket (no SDK).
+- scrape: any Prometheus text endpoint, normally node_exporter, stored as-is with an
+  `instance` label, plus `up`.
+
+A failing source logs once and keeps retrying; the other loops are unaffected.
+
 ## Local store
 
 SQLite in WAL mode (`agent/store.go`), one file per node. `samples` and `events` (which

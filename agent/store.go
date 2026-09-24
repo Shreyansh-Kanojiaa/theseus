@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS spool (
 
 // Store is the agent's local SQLite store.
 type Store struct {
+	mu    sync.Mutex // one Append at a time, so commit order is seq order
 	db    *sql.DB
 	stamp *Stamper
 }
@@ -70,8 +72,11 @@ func OpenStore(dir, nodeID string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 // Append stamps the records and writes them to their table and the spool in
-// one transaction. An unset priority defaults by record type.
+// one transaction. An unset priority defaults by record type. Appends are
+// serialised: a reader never sees seq n+1 committed before seq n.
 func (s *Store) Append(recs ...*schemav1.Record) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	hs := make([]*schemav1.Header, len(recs))
 	for i, r := range recs {
 		if hs[i] = r.Header(); hs[i] == nil {

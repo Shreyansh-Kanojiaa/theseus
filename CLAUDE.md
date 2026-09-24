@@ -55,6 +55,9 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
   one transaction. `schemav1.Record` is the oneof envelope stored in the spool and sent on
   the wire. `Prune`/`RunRetention` age out samples and events (7 days); the spool is only
   drained by sync acks. Retention relies on hlc rising with seq (see `Prune`).
+- Collectors are `agent.CollectFunc`s run by `agent.Collect` (one goroutine and one Append
+  per round each). Docker is spoken to over its socket with net/http, no SDK.
+  Binaries live in `cmd/`.
 - Record numbers in BENCHMARKS.md with the command that reproduces them. `make bench`.
 
 ## Month 1 checkpoints

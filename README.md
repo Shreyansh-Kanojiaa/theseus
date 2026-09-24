@@ -16,11 +16,19 @@ make build test lint
 make gen    # after editing schema/v1/records.proto
 ```
 
+Run the agent against a local node_exporter:
+
+```sh
+go run ./cmd/theseus-agent -data data -scrape http://localhost:9100/metrics
+go run ./cmd/theseus-agent -h    # intervals, mounts, procfs root, Docker socket
+```
+
 ## Layout
 
 | Dir             | Module                                             |
 |-----------------|----------------------------------------------------|
 | `agent/`        | Edge agent: collector, local store, probes, alerts |
+| `cmd/`          | Binaries (`theseus-agent`)                         |
 | `recovery/`     | Recovery engine (rules, graph, Laya, LLM, executor)|
 | `sync/`         | Synchronization engine                             |
 | `incident/`     | Incident timeline reconstruction                   |
