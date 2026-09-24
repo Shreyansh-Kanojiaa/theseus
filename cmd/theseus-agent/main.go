@@ -28,6 +28,8 @@ func main() {
 		hostEvery   = flag.Duration("host-interval", 15*time.Second, "host metrics interval")
 		dockerEvery = flag.Duration("docker-interval", 15*time.Second, "container state interval")
 		scrapeEvery = flag.Duration("scrape-interval", 30*time.Second, "scrape interval")
+		probeEvery  = flag.Duration("probe-interval", 10*time.Second, "health probe interval for containers labelled "+agent.ProbeLabel)
+		probeMisses = flag.Uint("probe-misses", 3, "consecutive probe failures that emit a probe_fail event")
 	)
 	flag.Parse()
 
@@ -45,7 +47,9 @@ func main() {
 	wg.Go(func() { s.RunRetention(ctx, agent.Retention, time.Hour) })
 	wg.Go(func() { agent.Collect(ctx, s, "host", *hostEvery, agent.HostMetrics(*proc, split(*mounts))) })
 	if *docker != "" {
-		wg.Go(func() { agent.Collect(ctx, s, "docker", *dockerEvery, agent.ContainerState(agent.NewDocker(*docker))) })
+		d := agent.NewDocker(*docker)
+		wg.Go(func() { agent.Collect(ctx, s, "docker", *dockerEvery, agent.ContainerState(d)) })
+		wg.Go(func() { agent.Collect(ctx, s, "probe", *probeEvery, agent.Probes(d, uint32(*probeMisses))) })
 	}
 	for _, t := range split(*scrape) {
 		wg.Go(func() { agent.Collect(ctx, s, "scrape "+t, *scrapeEvery, agent.Scrape(t)) })

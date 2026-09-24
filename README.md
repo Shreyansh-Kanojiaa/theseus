@@ -23,6 +23,13 @@ go run ./cmd/theseus-agent -data data -scrape http://localhost:9100/metrics
 go run ./cmd/theseus-agent -h    # intervals, mounts, procfs root, Docker socket
 ```
 
+Label a container to have it health-probed (every 10 s; 3 misses emit `probe_fail`):
+
+```sh
+docker run -l 'theseus.probe=http://:9090/-/healthy' prom/prometheus
+docker run -l 'theseus.probe=tcp://:5432' ...                   # or exec:pg_isready -q
+```
+
 ## Layout
 
 | Dir             | Module                                             |

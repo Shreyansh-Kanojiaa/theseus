@@ -14,7 +14,7 @@ Full definitions of done are in [CLAUDE.md](CLAUDE.md).
 - [x] CP1 Event schema (protobuf)
 - [x] CP2 Local store (SQLite WAL, retention)
 - [x] CP3 Collector
-- [ ] CP4 Service discovery + health probes
+- [x] CP4 Service discovery + health probes
 - [ ] CP5 Log tail
 - [ ] CP6 Local alerts
 - [ ] CP7 3-node testbed

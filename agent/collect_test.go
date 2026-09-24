@@ -129,25 +129,32 @@ req_seconds_count 5
 	}
 }
 
-func TestContainerState(t *testing.T) {
+// fakeDocker serves h on a unix socket and returns a client for it.
+func fakeDocker(t *testing.T, h http.HandlerFunc) *Docker {
+	t.Helper()
 	sock := filepath.Join(t.TempDir(), "docker.sock")
 	l, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewUnstartedServer(h)
+	srv.Listener = l
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return NewDocker(sock)
+}
+
+func TestContainerState(t *testing.T) {
+	d := fakeDocker(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/containers/json" || r.URL.Query().Get("all") != "1" {
 			http.NotFound(w, r)
 			return
 		}
 		_, _ = fmt.Fprint(w, `[{"Id":"abc","Names":["/postgres"],"Image":"postgres:16","State":"running","Labels":{"theseus.probe":"tcp://:5432"}},
 			{"Id":"def","Names":["/prometheus"],"Image":"prom/prometheus","State":"exited"}]`)
-	}))
-	srv.Listener = l
-	srv.Start()
-	defer srv.Close()
+	})
 
-	recs, err := ContainerState(NewDocker(sock))(context.Background())
+	recs, err := ContainerState(d)(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

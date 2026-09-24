@@ -57,7 +57,8 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
   drained by sync acks. Retention relies on hlc rising with seq (see `Prune`).
 - Collectors are `agent.CollectFunc`s run by `agent.Collect` (one goroutine and one Append
   per round each). Docker is spoken to over its socket with net/http, no SDK.
-  Binaries live in `cmd/`.
+  Binaries live in `cmd/`. Health probes come from the `theseus.probe` container label
+  (`agent.Probes`); the Nth consecutive miss emits a `probe_fail` event.
 - Record numbers in BENCHMARKS.md with the command that reproduces them. `make bench`.
 
 ## Month 1 checkpoints

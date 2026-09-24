@@ -53,6 +53,12 @@ one batch per round (`agent.Collect`):
 - scrape: any Prometheus text endpoint, normally node_exporter, stored as-is with an
   `instance` label, plus `up`.
 
+- probe: containers labelled `theseus.probe` (`http://:port/path`, `tcp://:port` or
+  `exec:cmd args`; an empty host means the container's IP) are found on every round
+  and probed concurrently, each emitting a `ProbeResult` with its consecutive failures.
+  The third miss in a row (30 s at the default 10 s) emits a `probe_fail` event, the
+  next success `probe_recovered`. A stopped container fails its probe.
+
 A failing source logs once and keeps retrying; the other loops are unaffected.
 
 ## Local store
