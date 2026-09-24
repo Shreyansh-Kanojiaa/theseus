@@ -13,6 +13,11 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - run: make build test lint
+      - name: tiny tmpfs for the disk-full test
+        run: |
+          sudo mkdir -p /mnt/tiny && sudo mount -t tmpfs -o size=16m tmpfs /mnt/tiny && sudo chmod 777 /mnt/tiny
+          echo THESEUS_TINY_FS=/mnt/tiny >> "$GITHUB_ENV"
+      # -v so the log shows TestDiskFullTinyFS ran rather than skipped.
+      - run: make build test lint TESTFLAGS=-v
       - name: generated code is up to date
         run: make gen && git diff --exit-code

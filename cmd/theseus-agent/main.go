@@ -20,6 +20,7 @@ func main() {
 	host, _ := os.Hostname()
 	var (
 		data        = flag.String("data", "data", "directory for the store")
+		ballast     = flag.Int64("ballast", 64<<20, "bytes preallocated in <data>/ballast and freed when the disk fills; 0 disables")
 		node        = flag.String("node", host, "node id")
 		proc        = flag.String("proc", "/proc", "procfs root (the host's /proc when containerised)")
 		mounts      = flag.String("mounts", "/", "comma-separated mountpoints to report disk usage for")
@@ -36,7 +37,7 @@ func main() {
 	if err := os.MkdirAll(*data, 0o755); err != nil {
 		log.Fatal(err)
 	}
-	s, err := agent.OpenStore(*data, *node)
+	s, err := agent.OpenStore(*data, *node, *ballast)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -45,6 +46,7 @@ func main() {
 
 	var wg sync.WaitGroup
 	wg.Go(func() { s.RunRetention(ctx, agent.Retention, time.Hour) })
+	wg.Go(func() { s.RunDiskRecovery(ctx, 30*time.Second) })
 	wg.Go(func() { agent.Collect(ctx, s, "host", *hostEvery, agent.HostMetrics(*proc, split(*mounts))) })
 	if *docker != "" {
 		d := agent.NewDocker(*docker)

@@ -59,6 +59,13 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
   per round each). Docker is spoken to over its socket with net/http, no SDK.
   Binaries live in `cmd/`. Health probes come from the `theseus.probe` container label
   (`agent.Probes`); the Nth consecutive miss emits a `probe_fail` event.
+- Disk-full survival (`agent/diskfull.go`): the store keeps `<data>/ballast` (fallocated,
+  `-ballast`, default 64 MiB). The first ENOSPC/SQLITE_FULL deletes it and enters degraded
+  mode: an `agent_disk_full` incident is written, samples are dropped before stamping (and
+  counted), everything else is still written, or held in a 10k in-memory queue (lowest
+  priority evicted first) if even that fails. `Append` does not return disk-full errors.
+  Every 30 s it checks for 2x ballast + 16 MiB free, recreates the ballast and emits
+  `agent_disk_recovered`. Test on a real tmpfs with `make test-diskfull`.
 - Record numbers in BENCHMARKS.md with the command that reproduces them. `make bench`.
 
 ## Month 1 checkpoints
@@ -76,6 +83,8 @@ Week 2: the agent actually sees things
 CP3: Collector. Host metrics (CPU, mem, disk, net) from gopsutil/procfs, container state from the Docker API, and scraping of node_exporter into the local store. Intervals are configurable. Done when: the agent runs for 1 hour, the store has data, and the agent's own RSS stays reasonable (measure it and write the number down).
 
 CP4: Service discovery + health probes. Discover containers through Docker labels (e.g. theseus.probe=http://:9090/-/healthy), support HTTP/TCP/exec probes, and track consecutive failures ("3 misses over 30s" from Figure 2). Done when: you stop a container and see a probe_fail x3 event appear.
+
+CP4.5: Disk-full survival. The store shares the disk the chaos engine fills, and on ENOSPC every Append failed, incidents included. Add a fallocated ballast file freed on the first disk-full error, a degraded mode that drops samples but keeps events, probes and incidents, a bounded in-memory queue for when even those fail, and recovery that recreates the ballast. Done when: make build test lint is green in CI with the 16 MiB tmpfs test running, not skipped.
 
 CP5: Log tail. Keep a ring buffer of the last N log lines per labelled container, and turn keyword matches ("No space left on device", "OOM") into events. Keep it small. Its real job is feeding Laya's evidence bundle in month 2.
 

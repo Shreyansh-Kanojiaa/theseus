@@ -69,6 +69,23 @@ also holds probe results and incidents) serve local queries and are pruned after
 it; age never removes spool rows. A record is written to its table and the spool in one
 transaction, so a crash cannot leave one without the other.
 
+## Disk-full behaviour
+
+The store shares its disk with the services it watches, and chaos fills that disk on
+purpose. `<data>/ballast` holds 64 MiB of preallocated blocks (`-ballast`). The first
+write that fails with ENOSPC or SQLITE_FULL deletes it and puts the store in degraded
+mode:
+
+- an `agent_disk_full` incident is appended;
+- samples are dropped before they are stamped (no seqs burnt) and counted;
+- events, probe results and incidents are still written;
+- if even those fail (the fault refilled the freed space), they wait in memory, up to
+  10k records, lowest priority evicted first, and are stamped when they finally commit.
+
+Every 30 s a degraded store checks for 2x ballast + 16 MiB free. When it finds it, it
+recreates the ballast, leaves degraded mode and appends `agent_disk_recovered` with the
+number of dropped samples. A failed write's seqs are skipped, never reused.
+
 ## Sync
 
 Connected → Buffering → Handshake (watermark) → Replay (resumable, priority-ordered) →

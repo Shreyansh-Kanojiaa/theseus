@@ -76,7 +76,12 @@ func (s *Stamper) persist(hlc uint64) error {
 	if err != nil {
 		return err
 	}
-	d, err := os.Open(filepath.Dir(s.path))
+	return syncDir(filepath.Dir(s.path))
+}
+
+// syncDir fsyncs a directory so a create, rename or delete in it is durable.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
 	if err != nil {
 		return err
 	}

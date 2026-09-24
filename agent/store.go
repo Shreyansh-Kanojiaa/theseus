@@ -3,10 +3,12 @@ package agent
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,13 +46,25 @@ CREATE TABLE IF NOT EXISTS spool (
 
 // Store is the agent's local SQLite store.
 type Store struct {
-	mu    sync.Mutex // one Append at a time, so commit order is seq order
-	db    *sql.DB
-	stamp *Stamper
+	mu      sync.Mutex // one Append at a time, so commit order is seq order
+	db      *sql.DB
+	w       *sql.Conn // the write connection; nil until (re)opened
+	stamp   *Stamper
+	dir     string
+	ballast int64
+
+	// Disk-full state (see diskfull.go), guarded by mu.
+	degraded bool
+	dropped  uint64             // samples dropped since degraded mode began
+	pending  []*schemav1.Record // unstamped, oldest first, flushed by the next write
+
+	fault func() error // tests only: fails a write after stamping
 }
 
-// OpenStore opens (or creates) the store in dir.
-func OpenStore(dir, nodeID string) (*Store, error) {
+// OpenStore opens (or creates) the store in dir and allocates a ballast of
+// ballast bytes (0 for none). If the disk is too full for the ballast the
+// store starts in degraded mode.
+func OpenStore(dir, nodeID string, ballast int64) (*Store, error) {
 	st, err := OpenStamper(filepath.Join(dir, "stamp"), nodeID)
 	if err != nil {
 		return nil, err
@@ -65,32 +79,97 @@ func OpenStore(dir, nodeID string) (*Store, error) {
 	if _, err := db.Exec(ddl); err != nil {
 		return nil, errors.Join(err, db.Close())
 	}
-	return &Store{db: db, stamp: st}, nil
+	s := &Store{db: db, stamp: st, dir: dir, ballast: ballast}
+	if err := s.makeBallast(); err != nil {
+		if !isDiskFull(err) {
+			return nil, errors.Join(err, db.Close())
+		}
+		s.enterDegraded(err)
+		if err := s.put(nil); err != nil { // store the incident now if there is room
+			return nil, errors.Join(err, s.Close())
+		}
+	}
+	return s, nil
 }
 
 // Close closes the database.
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	if s.w != nil {
+		_ = s.w.Close()
+	}
+	return s.db.Close()
+}
 
 // Append stamps the records and writes them to their table and the spool in
 // one transaction. An unset priority defaults by record type. Appends are
 // serialised: a reader never sees seq n+1 committed before seq n.
+//
+// When the disk is full Append does not fail: see diskfull.go. Samples are
+// dropped and other records are written, or held in memory until they can be.
 func (s *Store) Append(recs ...*schemav1.Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	hs := make([]*schemav1.Header, len(recs))
-	for i, r := range recs {
-		if hs[i] = r.Header(); hs[i] == nil {
+	for _, r := range recs {
+		h := r.Header()
+		if h == nil {
 			return errors.New("append: empty record")
 		}
-		if hs[i].Priority == schemav1.Priority_PRIORITY_UNSPECIFIED {
-			hs[i].Priority = defaultPriority(r)
+		if h.Priority == schemav1.Priority_PRIORITY_UNSPECIFIED {
+			h.Priority = defaultPriority(r)
 		}
+	}
+	return s.put(recs)
+}
+
+// write stamps recs and commits them in one transaction. After an error the
+// headers are stale; the next write stamps them afresh, so a seq from a
+// failed write is skipped, never reused.
+func (s *Store) write(recs []*schemav1.Record) error {
+	hs := make([]*schemav1.Header, len(recs))
+	for i, r := range recs {
+		hs[i] = r.Header()
 	}
 	if err := s.stamp.Stamp(hs...); err != nil {
 		return err
 	}
+	if s.fault != nil {
+		if err := s.fault(); err != nil {
+			return err
+		}
+	}
+	err := s.commit(recs, hs)
+	if err != nil {
+		s.rollback()
+	}
+	return err
+}
 
-	tx, err := s.db.Begin()
+// rollback clears any transaction a failed write left open on the write
+// connection; SQLite can keep one open after SQLITE_FULL in COMMIT. If the
+// ROLLBACK itself fails, the connection is discarded and the next write
+// opens a fresh one.
+func (s *Store) rollback() {
+	if s.w == nil {
+		return
+	}
+	_, err := s.w.ExecContext(context.Background(), "ROLLBACK")
+	if err == nil || strings.Contains(err.Error(), "no transaction is active") {
+		return
+	}
+	_ = s.w.Raw(func(any) error { return driver.ErrBadConn }) // closes the driver conn
+	_ = s.w.Close()
+	s.w = nil
+}
+
+func (s *Store) commit(recs []*schemav1.Record, hs []*schemav1.Header) error {
+	if s.w == nil {
+		w, err := s.db.Conn(context.Background())
+		if err != nil {
+			return err
+		}
+		s.w = w
+	}
+	tx, err := s.w.BeginTx(context.Background(), nil)
 	if err != nil {
 		return err
 	}

@@ -34,7 +34,7 @@ func TestRetention(t *testing.T) {
 	wallClock = func() time.Time { return now }
 	t.Cleanup(func() { wallClock = time.Now })
 
-	s, err := OpenStore(t.TempDir(), "node-c")
+	s, err := OpenStore(t.TempDir(), "node-c", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestRetention(t *testing.T) {
 // and the spool, and seq keeps rising after the crash.
 func TestKill9MidWrite(t *testing.T) {
 	if dir := os.Getenv("THESEUS_CRASH_DIR"); dir != "" {
-		s, err := OpenStore(dir, "node-c")
+		s, err := OpenStore(dir, "node-c", 0)
 		if err != nil {
 			os.Exit(2)
 		}
@@ -101,7 +101,7 @@ func TestKill9MidWrite(t *testing.T) {
 			t.Fatalf("writer exited on its own with code %d before the kill", code)
 		}
 
-		s, err := OpenStore(dir, "node-c")
+		s, err := OpenStore(dir, "node-c", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +134,7 @@ func TestKill9MidWrite(t *testing.T) {
 // BenchmarkAppend100k writes 100k samples per op in batches of 1000
 // (about one node_exporter scrape per batch).
 func BenchmarkAppend100k(b *testing.B) {
-	s, err := OpenStore(b.TempDir(), "node-c")
+	s, err := OpenStore(b.TempDir(), "node-c", 0)
 	if err != nil {
 		b.Fatal(err)
 	}
