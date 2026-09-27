@@ -83,8 +83,9 @@ only: nothing acts on an alert yet.
 
 ## Testbed
 
-`make up` builds the agent image (`Dockerfile`) and starts nodes a, b and c from
-`testbed/node.yaml`, one compose project each (`theseus-a`...). A node is agent +
+`make up` builds the agent image (`Dockerfile`), starts nodes a, b and c from
+`testbed/node.yaml`, one compose project each (`theseus-a`...), and the control-plane
+side (below). A node is agent +
 postgres + prometheus + node_exporter on the node's own `internal` network, so it has no
 route out except through its agent, the only container also on the shared
 `theseus-uplink` network. `make sever NODE=c` disconnects C's agent from the uplink,
@@ -98,6 +99,21 @@ disk would. Per-container limits add up to ~1.3 GB and 1.35 CPUs per node. tmpfs
 count against the memory limit of whichever container writes them. node_exporter runs
 five collectors (~335 series instead of ~1,800). Host metrics and node_exporter still
 read the host kernel's CPU and memory, not the node's limits.
+
+## Agent metrics and dashboards
+
+The agent serves its own `/metrics` on `-listen` (default `:9101`), plain Prometheus
+text written by `Store.WriteMetrics`: `theseus_agent_records_written_total{type}` and
+`theseus_agent_probe_failures_total{target}` (counted as the store writes them, so they
+match what is on disk), `theseus_agent_spool_depth` (rows awaiting sync acks) and
+`theseus_agent_disk_degraded`.
+
+The control-plane side of the testbed (`testbed/controlplane.yaml`) is a Prometheus that
+scrapes every agent over `theseus-uplink`, and Grafana provisioned entirely from
+`dashboard/`: the datasource, a dashboard provider and `dashboard/dashboards/*.json`. The
+home dashboard, "Theseus fleet", shows per node the uplink (`up`, CUT OFF when severed),
+disk degraded, records written, spool depth and probe failures. Anonymous users can
+view it; dashboards are not editable in the UI, so every change goes through the JSON.
 
 ## Local store
 

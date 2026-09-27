@@ -27,8 +27,9 @@ bench:
 	go test -run='^$$' -bench=. -benchtime=3x ./...
 
 # 3-node testbed (testbed/node.yaml): nodes a, b and c, each on its own internal
-# network, their agents joined by theseus-uplink. sever/heal cut and restore
-# one node's uplink: make sever NODE=c.
+# network, their agents joined by theseus-uplink, plus the control-plane side
+# (testbed/controlplane.yaml: Prometheus + Grafana on http://localhost:3300).
+# sever/heal cut and restore one node's uplink: make sever NODE=c.
 NODES := a b c
 TESTBED = NODE=$$n docker compose -f testbed/node.yaml
 
@@ -38,8 +39,10 @@ image:
 up: image
 	docker network inspect theseus-uplink >/dev/null 2>&1 || docker network create theseus-uplink
 	for n in $(NODES); do $(TESTBED) up -d --wait || exit 1; done
+	docker compose -f testbed/controlplane.yaml up -d --wait
 
 down:
+	docker compose -f testbed/controlplane.yaml down -v
 	for n in $(NODES); do $(TESTBED) down -v || exit 1; done
 	docker network rm -f theseus-uplink
 

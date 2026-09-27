@@ -58,6 +58,10 @@ type Store struct {
 	dropped  uint64             // samples dropped since degraded mode began
 	pending  []*schemav1.Record // unstamped, oldest first, flushed by the next write
 
+	// Counters for /metrics (see metrics.go), guarded by mu.
+	written    map[string]uint64 // by record type
+	probeFails map[string]uint64 // failed probe results written, by probed target
+
 	fault func() error // tests only: fails a write after stamping
 }
 
@@ -79,7 +83,8 @@ func OpenStore(dir, nodeID string, ballast int64) (*Store, error) {
 	if _, err := db.Exec(ddl); err != nil {
 		return nil, errors.Join(err, db.Close())
 	}
-	s := &Store{db: db, stamp: st, dir: dir, ballast: ballast}
+	s := &Store{db: db, stamp: st, dir: dir, ballast: ballast,
+		written: map[string]uint64{}, probeFails: map[string]uint64{}}
 	if err := s.makeBallast(); err != nil {
 		if !isDiskFull(err) {
 			return nil, errors.Join(err, db.Close())

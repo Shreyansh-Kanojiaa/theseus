@@ -3,9 +3,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -22,6 +25,7 @@ func main() {
 		data        = flag.String("data", "data", "directory for the store")
 		ballast     = flag.Int64("ballast", 64<<20, "bytes preallocated in <data>/ballast and freed when the disk fills; 0 disables")
 		node        = flag.String("node", host, "node id")
+		listen      = flag.String("listen", ":9101", "address serving the agent's own /metrics; empty disables")
 		proc        = flag.String("proc", "/proc", "procfs root (the host's /proc when containerised)")
 		mounts      = flag.String("mounts", "/", "comma-separated mountpoints to report disk usage for")
 		docker      = flag.String("docker", "/var/run/docker.sock", "Docker socket; empty disables container state")
@@ -66,6 +70,9 @@ func main() {
 	defer stop()
 
 	var wg sync.WaitGroup
+	if *listen != "" {
+		wg.Go(func() { serveMetrics(ctx, *listen, s) })
+	}
 	wg.Go(func() { s.RunRetention(ctx, agent.Retention, time.Hour) })
 	wg.Go(func() { s.RunDiskRecovery(ctx, 30*time.Second) })
 	wg.Go(func() {
@@ -86,6 +93,29 @@ func main() {
 	wg.Wait()
 	if err := s.Close(); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// serveMetrics serves /metrics until ctx is done. A failure is logged, not
+// fatal: the agent's job doesn't depend on being watched.
+func serveMetrics(ctx context.Context, addr string, s *agent.Store) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
+		var b bytes.Buffer
+		if err := s.WriteMetrics(&b); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		_, _ = w.Write(b.Bytes())
+	})
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		<-ctx.Done()
+		_ = srv.Close()
+	}()
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		log.Printf("metrics: %v", err)
 	}
 }
 

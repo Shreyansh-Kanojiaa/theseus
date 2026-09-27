@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: theseus-agent
+    static_configs:
+      - {targets: ["theseus-a-agent-1:9101"], labels: {node: a}}
+      - {targets: ["theseus-b-agent-1:9101"], labels: {node: b}}
+      - {targets: ["theseus-c-agent-1:9101"], labels: {node: c}}

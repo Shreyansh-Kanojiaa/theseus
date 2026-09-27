@@ -1,0 +1,36 @@
+# Control-plane side of the testbed: a Prometheus scraping every agent's own
+# /metrics over theseus-uplink, and Grafana provisioned from dashboard/.
+# A severed node's agent drops to up=0 here while it keeps running locally.
+#
+#   docker compose -f testbed/controlplane.yaml up -d    (make up does this)
+#   Grafana: http://localhost:3300 (GRAFANA_PORT), anonymous viewer, admin/admin to edit.
+name: theseus-cp
+
+x-cp: &cp
+  restart: unless-stopped
+  networks: [uplink]
+  security_opt: [label=disable] # SELinux hosts: read the bind-mounted config
+
+services:
+  prometheus:
+    <<: *cp
+    image: prom/prometheus:v3.5.0
+    volumes: [./controlplane-prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+
+  grafana:
+    <<: *cp
+    image: grafana/grafana:12.3.3
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3300}:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/fleet.json
+    volumes:
+      - ../dashboard/provisioning:/etc/grafana/provisioning:ro
+      - ../dashboard/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+
+networks:
+  uplink:
+    name: theseus-uplink
+    external: true

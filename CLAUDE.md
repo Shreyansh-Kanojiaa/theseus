@@ -77,6 +77,9 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
   each node's services sit on an internal network and share a 1 GiB tmpfs `/disk`; only
   the agent joins `theseus-uplink`, so `make sever NODE=c` is one network disconnect.
   Agents share the host's Docker daemon and see only their node via `-docker-label`.
+- Agent `/metrics` (`-listen`, default :9101) is hand-written Prometheus text from
+  `Store.WriteMetrics`, no client_golang. Grafana (`testbed/controlplane.yaml`, port 3300)
+  is provisioned only from `dashboard/`; edit the dashboard JSON, never the UI.
 - Record numbers in BENCHMARKS.md with the command that reproduces them. `make bench`.
 
 ## Month 1 checkpoints

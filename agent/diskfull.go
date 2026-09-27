@@ -121,6 +121,7 @@ func (s *Store) put(recs []*schemav1.Record) error {
 	switch {
 	case err == nil:
 		s.pending = nil
+		s.count(batch)
 		return nil
 	case !isDiskFull(err):
 		return err
