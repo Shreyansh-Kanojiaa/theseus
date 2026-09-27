@@ -21,7 +21,12 @@ import (
 
 // Docker talks to the Docker Engine API over its unix socket. Only the few
 // endpoints the agent needs, so no SDK.
-type Docker struct{ c *http.Client }
+type Docker struct {
+	c *http.Client
+	// Label, as key=value, limits Containers to those carrying it, e.g. the
+	// node's compose project when several agents share one daemon.
+	Label string
+}
 
 // NewDocker returns a client for the engine listening on socket.
 func NewDocker(socket string) *Docker {
@@ -106,8 +111,13 @@ func (d *Docker) get(ctx context.Context, path string, out any) error {
 
 // Containers lists all containers, running or not.
 func (d *Docker) Containers(ctx context.Context) ([]Container, error) {
+	q := url.Values{"all": {"1"}}
+	if d.Label != "" {
+		f, _ := json.Marshal(map[string][]string{"label": {d.Label}})
+		q.Set("filters", string(f))
+	}
 	var cs []Container
-	return cs, d.get(ctx, "/containers/json?all=1", &cs)
+	return cs, d.get(ctx, "/containers/json?"+q.Encode(), &cs)
 }
 
 // Exec runs cmd inside container id and returns its exit code and the first

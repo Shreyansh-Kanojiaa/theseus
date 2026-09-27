@@ -73,6 +73,10 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
   priority evicted first) if even that fails. `Append` does not return disk-full errors.
   Every 30 s it checks for 2x ballast + 16 MiB free, recreates the ballast and emits
   `agent_disk_recovered`. Test on a real tmpfs with `make test-diskfull`.
+- Testbed (`testbed/node.yaml`, one compose project per node, `make up/down/sever/heal`):
+  each node's services sit on an internal network and share a 1 GiB tmpfs `/disk`; only
+  the agent joins `theseus-uplink`, so `make sever NODE=c` is one network disconnect.
+  Agents share the host's Docker daemon and see only their node via `-docker-label`.
 - Record numbers in BENCHMARKS.md with the command that reproduces them. `make bench`.
 
 ## Month 1 checkpoints

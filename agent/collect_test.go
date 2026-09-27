@@ -146,7 +146,8 @@ func fakeDocker(t *testing.T, h http.HandlerFunc) *Docker {
 
 func TestContainerState(t *testing.T) {
 	d := fakeDocker(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/containers/json" || r.URL.Query().Get("all") != "1" {
+		if r.URL.Path != "/containers/json" || r.URL.Query().Get("all") != "1" ||
+			r.URL.Query().Get("filters") != `{"label":["com.docker.compose.project=theseus-c"]}` {
 			http.NotFound(w, r)
 			return
 		}
@@ -154,6 +155,7 @@ func TestContainerState(t *testing.T) {
 			{"Id":"def","Names":["/prometheus"],"Image":"prom/prometheus","State":"exited"}]`)
 	})
 
+	d.Label = "com.docker.compose.project=theseus-c"
 	recs, err := ContainerState(d)(context.Background())
 	if err != nil {
 		t.Fatal(err)

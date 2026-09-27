@@ -1,0 +1,84 @@
+# One testbed node: agent, postgres, prometheus and node_exporter on the node's
+# own internal network (no route out), with only the agent also on the shared
+# theseus-uplink network. Severing the node = disconnecting its agent from it.
+# All four share the node's disk: a size-capped tmpfs volume mounted at /disk.
+#
+#   NODE=c docker compose -f testbed/node.yaml up -d     (make up does a, b and c)
+#
+# Limits add up to ~1.3 GB and 1.35 CPUs per node, edge-box sized. tmpfs pages
+# count against the memory limit of the container that writes them.
+name: theseus-${NODE:?set NODE to a, b or c}
+
+x-node: &node
+  restart: unless-stopped
+  # SELinux hosts: lets containers share the tmpfs disk, the agent use the Docker
+  # socket and prometheus read its bind-mounted config. A no-op elsewhere.
+  security_opt: [label=disable]
+  networks: [lan]
+  volumes: [disk:/disk]
+
+services:
+  agent:
+    <<: *node
+    image: theseus-agent
+    command:
+      - -node=${NODE}
+      - -data=/disk/agent
+      - -mounts=/disk
+      - -scrape=http://node-exporter:9100/metrics
+      - -docker-label=com.docker.compose.project=theseus-${NODE}
+    volumes: [disk:/disk, /var/run/docker.sock:/var/run/docker.sock]
+    networks: [lan, uplink]
+    depends_on: [node-exporter]
+    cpus: 0.25
+    mem_limit: 256m
+
+  postgres:
+    <<: *node
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: theseus # testbed only; the node network is internal
+      PGDATA: /disk/postgres
+    labels: {theseus.probe: "exec:pg_isready -q -U postgres"}
+    cpus: 0.5
+    mem_limit: 512m
+
+  prometheus:
+    <<: *node
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/disk/prometheus
+      - --storage.tsdb.retention.size=128MB
+    volumes: [disk:/disk, ./prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    labels: {theseus.probe: "http://:9090/-/healthy"}
+    cpus: 0.5
+    mem_limit: 512m
+
+  node-exporter:
+    <<: *node
+    image: prom/node-exporter:v1.9.1
+    # A handful of collectors, as an edge box would run: the full set is ~1,800
+    # series and most of the agent's store (see BENCHMARKS.md).
+    command:
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.loadavg
+      - --collector.meminfo
+      - --collector.filesystem
+      - --collector.netdev
+    labels: {theseus.probe: "tcp://:9100"}
+    volumes: []
+    cpus: 0.1
+    mem_limit: 64m
+
+networks:
+  lan:
+    internal: true
+  uplink:
+    name: theseus-uplink
+    external: true
+
+volumes:
+  disk:
+    driver_opts: {type: tmpfs, device: tmpfs, o: "size=1g,mode=1777"}

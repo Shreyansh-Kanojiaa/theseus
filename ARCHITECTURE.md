@@ -81,6 +81,24 @@ before the store does, so alerts keep firing while a full disk has the store dro
 samples. Nothing leaves the node, so alerts work with the uplink cut. Detection
 only: nothing acts on an alert yet.
 
+## Testbed
+
+`make up` builds the agent image (`Dockerfile`) and starts nodes a, b and c from
+`testbed/node.yaml`, one compose project each (`theseus-a`...). A node is agent +
+postgres + prometheus + node_exporter on the node's own `internal` network, so it has no
+route out except through its agent, the only container also on the shared
+`theseus-uplink` network. `make sever NODE=c` disconnects C's agent from the uplink,
+cutting C off from the other nodes and the internet while its own services keep
+talking; `make heal NODE=c` reconnects it. The agent only sees its own node's
+containers (`-docker-label com.docker.compose.project=theseus-c`) on the shared daemon.
+
+Each node's four containers share its disk, a 1 GiB tmpfs volume at `/disk` (agent
+store, postgres and prometheus data), so filling it hits all of them as a real full
+disk would. Per-container limits add up to ~1.3 GB and 1.35 CPUs per node. tmpfs pages
+count against the memory limit of whichever container writes them. node_exporter runs
+five collectors (~335 series instead of ~1,800). Host metrics and node_exporter still
+read the host kernel's CPU and memory, not the node's limits.
+
 ## Local store
 
 SQLite in WAL mode (`agent/store.go`), one file per node. `samples` and `events` (which

@@ -25,6 +25,7 @@ func main() {
 		proc        = flag.String("proc", "/proc", "procfs root (the host's /proc when containerised)")
 		mounts      = flag.String("mounts", "/", "comma-separated mountpoints to report disk usage for")
 		docker      = flag.String("docker", "/var/run/docker.sock", "Docker socket; empty disables container state")
+		dockerLabel = flag.String("docker-label", "", "only see containers with this key=value label (one node's containers on a shared daemon)")
 		scrape      = flag.String("scrape", "", "comma-separated Prometheus endpoints, e.g. http://localhost:9100/metrics")
 		hostEvery   = flag.Duration("host-interval", 15*time.Second, "host metrics interval")
 		dockerEvery = flag.Duration("docker-interval", 15*time.Second, "container state interval")
@@ -72,6 +73,7 @@ func main() {
 	})
 	if *docker != "" {
 		d := agent.NewDocker(*docker)
+		d.Label = *dockerLabel
 		wg.Go(func() { agent.Collect(ctx, s, "docker", *dockerEvery, alerts.Watch(agent.ContainerState(d))) })
 		wg.Go(func() { agent.Collect(ctx, s, "probe", *probeEvery, agent.Probes(d, uint32(*probeMisses))) })
 		logs := agent.NewLogTail(d, *logLines, split(*logKeywords))

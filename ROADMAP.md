@@ -17,7 +17,7 @@ Full definitions of done are in [CLAUDE.md](CLAUDE.md).
 - [x] CP4 Service discovery + health probes
 - [x] CP5 Log tail
 - [x] CP6 Local alerts
-- [ ] CP7 3-node testbed
+- [x] CP7 3-node testbed
 - [ ] CP8 Prometheus + Grafana wiring
 - [ ] CP9 Control plane stub + naive full-state sync
 - [ ] CP10 Chaos harness groundwork

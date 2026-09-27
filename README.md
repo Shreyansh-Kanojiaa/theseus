@@ -36,6 +36,9 @@ Local alerts are threshold rules in YAML (`-alerts`, default `agent/alerts.yaml`
 disk > 85%). Alert events are stored and printed to stdout as JSON lines, or sent to
 `-alert-output http://localhost:.../hook`.
 
+3-node testbed (Docker Compose): `make up`, then `make sever NODE=c` / `make heal NODE=c`
+to cut and restore node C's uplink, `make down` to remove everything.
+
 ## Layout
 
 | Dir             | Module                                             |
