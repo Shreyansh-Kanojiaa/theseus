@@ -32,6 +32,10 @@ docker run -l 'theseus.probe=tcp://:5432' ...                   # or exec:pg_isr
 docker run -l theseus.logs=1 ...                                 # logs only, no probe
 ```
 
+Local alerts are threshold rules in YAML (`-alerts`, default `agent/alerts.yaml`, e.g.
+disk > 85%). Alert events are stored and printed to stdout as JSON lines, or sent to
+`-alert-output http://localhost:.../hook`.
+
 ## Layout
 
 | Dir             | Module                                             |

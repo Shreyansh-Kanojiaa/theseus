@@ -62,6 +62,10 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
   `agent.LogTail` polls the logs of containers labelled `theseus.logs` or `theseus.probe`,
   keeps the last N lines each in memory (`Lines`, for month 2's evidence bundle) and
   emits one `log_match` event per container and keyword per round.
+- Local alerts: `agent.Alerts.Watch` wraps a CollectFunc and evaluates its samples against
+  YAML threshold rules (`agent/alerts.yaml` embedded as the default) before they reach the
+  store, so alerts survive degraded mode. Transitions emit `alert` / `alert_resolved`
+  events, stored and sent to stdout or a webhook. YAML is `go.yaml.in/yaml/v3`.
 - Disk-full survival (`agent/diskfull.go`): the store keeps `<data>/ballast` (fallocated,
   `-ballast`, default 64 MiB). The first ENOSPC/SQLITE_FULL deletes it and enters degraded
   mode: an `agent_disk_full` incident is written, samples are dropped before stamping (and

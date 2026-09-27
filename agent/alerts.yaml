@@ -1,0 +1,22 @@
+# Default local alert rules (theseus-agent -alerts replaces them).
+# A rule fires when a sample named `metric`, carrying at least `labels`,
+# compares true (`op`: > >= < <= == !=) against `value` on every round for
+# at least `for`. Firing emits an `alert` event, clearing `alert_resolved`.
+rules:
+  - name: disk_high
+    metric: host_disk_used_ratio
+    op: ">"
+    value: 0.85
+    severity: critical
+  - name: memory_high
+    metric: host_memory_used_ratio
+    op: ">"
+    value: 0.9
+    for: 1m
+    severity: warning
+  - name: scrape_down
+    metric: up
+    op: "=="
+    value: 0
+    for: 1m
+    severity: warning

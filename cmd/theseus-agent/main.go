@@ -33,13 +33,30 @@ func main() {
 		probeMisses = flag.Uint("probe-misses", 3, "consecutive probe failures that emit a probe_fail event")
 		logEvery    = flag.Duration("log-interval", 5*time.Second, "log tail interval for containers labelled "+agent.LogsLabel+" or "+agent.ProbeLabel)
 		logLines    = flag.Int("log-lines", 100, "log lines kept per container")
+		alertRules  = flag.String("alerts", "", "YAML alert rules file (default: built-in disk, memory and scrape rules)")
+		alertOut    = flag.String("alert-output", "stdout", `where alert events go besides the store: "stdout" (JSON lines) or a webhook URL`)
 		logKeywords = flag.String("log-keywords", "No space left on device,OOM,out of memory", "comma-separated case-sensitive substrings that emit a log_match event")
 	)
 	flag.Parse()
 
-	if err := os.MkdirAll(*data, 0o755); err != nil {
+	var err error
+	if err = os.MkdirAll(*data, 0o755); err != nil {
 		log.Fatal(err)
 	}
+	rulesYAML := agent.DefaultAlertRules
+	if *alertRules != "" {
+		if rulesYAML, err = os.ReadFile(*alertRules); err != nil {
+			log.Fatal(err)
+		}
+	}
+	rules, err := agent.ParseAlertRules(rulesYAML)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if *alertOut != "stdout" && !strings.HasPrefix(*alertOut, "http://") && !strings.HasPrefix(*alertOut, "https://") {
+		log.Fatalf("-alert-output %q: want stdout or an http(s) URL", *alertOut)
+	}
+	alerts := agent.NewAlerts(rules, *alertOut)
 	s, err := agent.OpenStore(*data, *node, *ballast)
 	if err != nil {
 		log.Fatal(err)
@@ -50,16 +67,18 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Go(func() { s.RunRetention(ctx, agent.Retention, time.Hour) })
 	wg.Go(func() { s.RunDiskRecovery(ctx, 30*time.Second) })
-	wg.Go(func() { agent.Collect(ctx, s, "host", *hostEvery, agent.HostMetrics(*proc, split(*mounts))) })
+	wg.Go(func() {
+		agent.Collect(ctx, s, "host", *hostEvery, alerts.Watch(agent.HostMetrics(*proc, split(*mounts))))
+	})
 	if *docker != "" {
 		d := agent.NewDocker(*docker)
-		wg.Go(func() { agent.Collect(ctx, s, "docker", *dockerEvery, agent.ContainerState(d)) })
+		wg.Go(func() { agent.Collect(ctx, s, "docker", *dockerEvery, alerts.Watch(agent.ContainerState(d))) })
 		wg.Go(func() { agent.Collect(ctx, s, "probe", *probeEvery, agent.Probes(d, uint32(*probeMisses))) })
 		logs := agent.NewLogTail(d, *logLines, split(*logKeywords))
 		wg.Go(func() { agent.Collect(ctx, s, "logs", *logEvery, logs.Collect) })
 	}
 	for _, t := range split(*scrape) {
-		wg.Go(func() { agent.Collect(ctx, s, "scrape "+t, *scrapeEvery, agent.Scrape(t)) })
+		wg.Go(func() { agent.Collect(ctx, s, "scrape "+t, *scrapeEvery, alerts.Watch(agent.Scrape(t))) })
 	}
 	log.Printf("theseus-agent: node %s, store %s", *node, *data)
 	wg.Wait()

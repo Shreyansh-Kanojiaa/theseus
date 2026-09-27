@@ -68,6 +68,19 @@ one batch per round (`agent.Collect`):
 
 A failing source logs once and keeps retrying; the other loops are unaffected.
 
+## Local alerts
+
+`agent.Alerts` wraps the sample-producing collectors (host, docker, scrape) and checks
+each round's samples against YAML threshold rules (`-alerts`; built-in default
+`agent/alerts.yaml`: disk used > 85%, memory > 90% for 1m, `up == 0` for 1m). A rule
+names a metric, optional label matchers, an op, a value and an optional `for`. Each
+transition becomes an event appended with the round's records, `alert` when it fires
+and `alert_resolved` when it clears, one per rule and series, and is also written to
+`-alert-output`: stdout as JSON lines, or POSTed to a webhook URL. Rules see samples
+before the store does, so alerts keep firing while a full disk has the store dropping
+samples. Nothing leaves the node, so alerts work with the uplink cut. Detection
+only: nothing acts on an alert yet.
+
 ## Local store
 
 SQLite in WAL mode (`agent/store.go`), one file per node. `samples` and `events` (which
