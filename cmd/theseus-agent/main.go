@@ -31,6 +31,9 @@ func main() {
 		scrapeEvery = flag.Duration("scrape-interval", 30*time.Second, "scrape interval")
 		probeEvery  = flag.Duration("probe-interval", 10*time.Second, "health probe interval for containers labelled "+agent.ProbeLabel)
 		probeMisses = flag.Uint("probe-misses", 3, "consecutive probe failures that emit a probe_fail event")
+		logEvery    = flag.Duration("log-interval", 5*time.Second, "log tail interval for containers labelled "+agent.LogsLabel+" or "+agent.ProbeLabel)
+		logLines    = flag.Int("log-lines", 100, "log lines kept per container")
+		logKeywords = flag.String("log-keywords", "No space left on device,OOM,out of memory", "comma-separated case-sensitive substrings that emit a log_match event")
 	)
 	flag.Parse()
 
@@ -52,6 +55,8 @@ func main() {
 		d := agent.NewDocker(*docker)
 		wg.Go(func() { agent.Collect(ctx, s, "docker", *dockerEvery, agent.ContainerState(d)) })
 		wg.Go(func() { agent.Collect(ctx, s, "probe", *probeEvery, agent.Probes(d, uint32(*probeMisses))) })
+		logs := agent.NewLogTail(d, *logLines, split(*logKeywords))
+		wg.Go(func() { agent.Collect(ctx, s, "logs", *logEvery, logs.Collect) })
 	}
 	for _, t := range split(*scrape) {
 		wg.Go(func() { agent.Collect(ctx, s, "scrape "+t, *scrapeEvery, agent.Scrape(t)) })

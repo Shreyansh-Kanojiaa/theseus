@@ -59,6 +59,9 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
   per round each). Docker is spoken to over its socket with net/http, no SDK.
   Binaries live in `cmd/`. Health probes come from the `theseus.probe` container label
   (`agent.Probes`); the Nth consecutive miss emits a `probe_fail` event.
+  `agent.LogTail` polls the logs of containers labelled `theseus.logs` or `theseus.probe`,
+  keeps the last N lines each in memory (`Lines`, for month 2's evidence bundle) and
+  emits one `log_match` event per container and keyword per round.
 - Disk-full survival (`agent/diskfull.go`): the store keeps `<data>/ballast` (fallocated,
   `-ballast`, default 64 MiB). The first ENOSPC/SQLITE_FULL deletes it and enters degraded
   mode: an `agent_disk_full` incident is written, samples are dropped before stamping (and

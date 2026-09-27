@@ -3,13 +3,16 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
 	"net"
 	"net/http"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -138,6 +141,44 @@ func (d *Docker) Exec(ctx context.Context, id string, cmd []string) (int, string
 		return 0, "", err
 	}
 	return st.ExitCode, strings.TrimSpace(string(out)), nil
+}
+
+// maxLogRead bounds one Logs response (tail lines of up to 16 KiB each).
+const maxLogRead = 4 << 20
+
+// Logs returns the last tail lines container id wrote to stdout and stderr at
+// or after since (zero: from the start), each prefixed with its RFC 3339 timestamp.
+func (d *Docker) Logs(ctx context.Context, id string, since time.Time, tail int) ([]string, error) {
+	q := url.Values{"stdout": {"1"}, "stderr": {"1"}, "timestamps": {"1"}, "tail": {strconv.Itoa(tail)}}
+	if !since.IsZero() {
+		q.Set("since", fmt.Sprintf("%d.%09d", since.Unix(), since.Nanosecond()))
+	}
+	resp, err := d.call(ctx, http.MethodGet, "/containers/"+id+"/logs?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxLogRead))
+	_ = resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("docker: logs: %w", err)
+	}
+	// Without a TTY the stream is multiplexed into frames: [stream 0 0 0 size:uint32be]
+	// then size bytes. With one it is raw, and every line starts with its timestamp,
+	// so a first byte of 0, 1 or 2 can only be a frame header.
+	if len(b) >= 8 && b[0] <= 2 {
+		var raw []byte
+		for len(b) >= 8 {
+			n := min(int(binary.BigEndian.Uint32(b[4:8])), len(b)-8)
+			raw = append(raw, b[8:8+n]...)
+			b = b[8+n:]
+		}
+		b = raw
+	}
+	var lines []string
+	for l := range strings.Lines(string(b)) {
+		lines = append(lines, strings.TrimRight(l, "\r\n"))
+	}
+	return lines, nil
 }
 
 // ContainerState emits container_running (1 or 0) for every container.

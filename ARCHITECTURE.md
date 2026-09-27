@@ -58,6 +58,13 @@ one batch per round (`agent.Collect`):
   and probed concurrently, each emitting a `ProbeResult` with its consecutive failures.
   The third miss in a row (30 s at the default 10 s) emits a `probe_fail` event, the
   next success `probe_recovered`. A stopped container fails its probe.
+- logs: containers labelled `theseus.logs` (any value) or `theseus.probe`, stopped ones
+  included, are polled every 5 s for new lines (`timestamps=1`, `since` the newest line
+  seen, `tail=100`). The last 100 lines per container stay in memory (`LogTail.Lines`),
+  the evidence the recovery engine reads. A line containing a keyword (`-log-keywords`,
+  case-sensitive: `No space left on device`, `OOM`, `out of memory`) emits a `log_match`
+  event, at most one per container and keyword per round with the match count in
+  `attrs.lines`. Lines older than the agent's start fill the buffer but never match.
 
 A failing source logs once and keeps retrying; the other loops are unaffected.
 

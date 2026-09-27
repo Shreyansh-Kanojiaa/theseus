@@ -15,7 +15,7 @@ Full definitions of done are in [CLAUDE.md](CLAUDE.md).
 - [x] CP2 Local store (SQLite WAL, retention)
 - [x] CP3 Collector
 - [x] CP4 Service discovery + health probes
-- [ ] CP5 Log tail
+- [x] CP5 Log tail
 - [ ] CP6 Local alerts
 - [ ] CP7 3-node testbed
 - [ ] CP8 Prometheus + Grafana wiring
