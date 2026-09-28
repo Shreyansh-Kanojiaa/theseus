@@ -42,6 +42,16 @@ is at http://localhost:3300 (Grafana, no login; `GRAFANA_PORT` to move it). Ever
 uploads its spool to the control plane every 30 s; `docker logs theseus-c-agent-1` shows
 each sync's records, bytes and duration.
 
+Break node C on purpose (each command checks the fault took effect, and its revert
+that it is gone; ground truth goes to `.chaos/ground-truth.jsonl`):
+
+```sh
+go build -o bin/theseus-chaos ./cmd/theseus-chaos
+bin/theseus-chaos inject kill --node c --target prometheus   # also: netem-loss, uplink-drop, disk-fill
+bin/theseus-chaos revert kill --node c --target prometheus
+make chaos-check                                             # all four, twice each
+```
+
 ## Layout
 
 | Dir             | Module                                             |

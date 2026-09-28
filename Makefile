@@ -1,7 +1,7 @@
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 BUF := go run github.com/bufbuild/buf/cmd/buf@v1.73.0
 
-.PHONY: build test test-diskfull lint gen bench image up down sever heal
+.PHONY: build test test-diskfull lint gen bench image up down sever heal chaos-check
 
 build:
 	go build ./...
@@ -51,3 +51,14 @@ sever:
 
 heal:
 	docker network connect theseus-uplink theseus-$(or $(NODE),$(error set NODE))-agent-1
+
+# Every chaos fault injected and reverted twice in a row on node C of a running
+# testbed (make up). theseus-chaos checks each inject took effect and each
+# revert undid it; the ground truth goes to .chaos/ground-truth.jsonl.
+CHAOS_FAULTS := "kill --target prometheus" netem-loss uplink-drop disk-fill
+
+chaos-check:
+	go build -o bin/theseus-chaos ./cmd/theseus-chaos
+	for i in 1 2; do for f in $(CHAOS_FAULTS); do \
+		bin/theseus-chaos inject $$f --node c && sleep 5 && bin/theseus-chaos revert $$f --node c || exit 1; \
+	done; done

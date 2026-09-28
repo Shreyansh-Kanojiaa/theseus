@@ -1,4 +1,5 @@
 /bin/
+/.chaos/
 *.db
 *.db-shm
 *.db-wal

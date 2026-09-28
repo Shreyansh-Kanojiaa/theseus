@@ -168,3 +168,37 @@ keepalive pings during an upload (10 s, 5 s timeout; the server permits them) an
 gRPC's reconnect backoff at 10 s: a sync fails within ~30 s of a cut instead of hanging,
 and the first sync after a heal happens on the next tick. Transport is plaintext and
 unauthenticated for now, fine inside the testbed.
+
+## Chaos
+
+`theseus-chaos` (`chaos/`, `cmd/theseus-chaos`) breaks one testbed node on purpose and
+labels exactly when. It runs on the host and drives the `docker` CLI:
+
+| Fault         | Inject                                              | Revert                  |
+|---------------|-----------------------------------------------------|-------------------------|
+| `kill`        | `docker kill` the node's `--target` service          | `docker start` it       |
+| `netem-loss`  | `tc qdisc ... netem loss 30%` (`--loss`) on the agent's uplink | delete the qdisc |
+| `uplink-drop` | iptables DROP in and out of the agent's uplink       | delete the rules        |
+| `disk-fill`   | fallocate every free byte of the node's `/disk`      | delete the file         |
+
+Network faults run `tc`/`iptables` in a throwaway container sharing the node agent's
+network namespace (the image carries iproute2 and iptables), so only that node's uplink
+is touched. `uplink-drop` is a partition: packets vanish and connections time out,
+where `make sever` removes the interface and connections fail at once. `disk-fill` runs
+its own container, so the tmpfs pages are not charged to a node service's memory limit,
+and refuses any volume that is not the testbed's tmpfs: `docker run -v` would otherwise
+create a missing volume on the host disk and fill that.
+
+Every fault has an `active` check, run after each inject and each revert, so a fault
+that did not take effect (or did not go away) is an error, not a silent label. An
+injected fault is written to `.chaos/active/` before it is applied and survives a
+crashed harness; `revert` removes it and appends the fault's ground truth to
+`.chaos/ground-truth.jsonl`, one line per fault:
+
+```json
+{"fault":"netem-loss","node":"c","target":"uplink","params":{"loss":"30%"},"start":"2026-09-28T08:03:12.3Z","end":"2026-09-28T08:03:19.6Z"}
+```
+
+The window is conservative (start before inject, end after the revert is verified).
+These lines are Laya's training labels in month 2. `make chaos-check` injects and reverts
+all four faults twice in a row on node C.

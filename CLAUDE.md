@@ -86,6 +86,12 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
   only after the control plane answers. `controlplane.Server` dedupes on (node_id, seq).
   Every sync logs records, payload/wire bytes and duration; keep that, it is the baseline.
   Keepalive + capped backoff exist because a severed uplink blackholes, it doesn't reset.
+- Chaos (`chaos/`, `cmd/theseus-chaos inject|revert|list`): faults kill, netem-loss,
+  uplink-drop, disk-fill on a testbed node via the docker CLI; network faults run tc/iptables
+  in a helper sharing the agent's netns. Each fault has an `active` check run after every
+  inject and revert. Active faults live in `.chaos/active/`; each revert appends one
+  `{fault,node,target,params,start,end}` line to `.chaos/ground-truth.jsonl` (Laya's
+  labels, gitignored). disk-fill refuses any volume that isn't the testbed tmpfs.
 - Record numbers in BENCHMARKS.md with the command that reproduces them. `make bench`.
 
 ## Month 1 checkpoints
