@@ -20,13 +20,14 @@ x-node: &node
 services:
   agent:
     <<: *node
-    image: theseus-agent
+    image: theseus
     command:
       - -node=${NODE}
       - -data=/disk/agent
       - -mounts=/disk
       - -scrape=http://node-exporter:9100/metrics
       - -docker-label=com.docker.compose.project=theseus-${NODE}
+      - -sync=theseus-cp-controlplane-1:50051
     volumes: [disk:/disk, /var/run/docker.sock:/var/run/docker.sock]
     networks: [lan, uplink]
     depends_on: [node-exporter]

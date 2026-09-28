@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"path/filepath"
 	"strings"
@@ -243,6 +244,40 @@ func (s *Store) Prune(cutoff time.Time) (int64, error) {
 		n += k
 	}
 	return n, nil
+}
+
+// ScanSpool calls fn with every spooled record in seq order and returns the
+// highest seq it passed, 0 for an empty spool. The scan is one snapshot:
+// records appended meanwhile are left for the next scan.
+func (s *Store) ScanSpool(ctx context.Context, fn func(*schemav1.Record) error) (uint64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT seq, body FROM spool ORDER BY seq`)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var last uint64
+	for rows.Next() {
+		var seq uint64
+		var body []byte
+		if err := rows.Scan(&seq, &body); err != nil {
+			return last, err
+		}
+		var r schemav1.Record
+		if err := proto.Unmarshal(body, &r); err != nil {
+			return last, fmt.Errorf("spool seq %d: %w", seq, err)
+		}
+		if err := fn(&r); err != nil {
+			return last, err
+		}
+		last = seq
+	}
+	return last, rows.Err()
+}
+
+// AckSpool drops spooled records up to seq once the control plane holds them.
+func (s *Store) AckSpool(seq uint64) error {
+	_, err := s.db.Exec(`DELETE FROM spool WHERE seq <= ?`, seq)
+	return err
 }
 
 // RunRetention prunes data older than keep every interval until ctx is done.

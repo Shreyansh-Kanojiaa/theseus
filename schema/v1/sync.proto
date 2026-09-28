@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package schema.v1;
+
+import "schema/v1/records.proto";
+
+option go_package = "github.com/Shreyansh-Kanojiaa/theseus/schema/v1;schemav1";
+
+// SyncService is the control plane's sync endpoint.
+service SyncService {
+  // Upload streams a node's records in chunks. The control plane stores each
+  // one it lacks, deduping on (node_id, seq), and answers once the stream ends.
+  rpc Upload(stream UploadRequest) returns (UploadResponse);
+}
+
+message UploadRequest {
+  repeated Record records = 1;
+}
+
+message UploadResponse {
+  // Records in the upload, new ones stored, and ones the control plane already held.
+  uint64 received = 1;
+  uint64 stored = 2;
+  uint64 duplicates = 3;
+}

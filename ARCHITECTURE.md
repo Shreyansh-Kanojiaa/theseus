@@ -108,8 +108,9 @@ text written by `Store.WriteMetrics`: `theseus_agent_records_written_total{type}
 match what is on disk), `theseus_agent_spool_depth` (rows awaiting sync acks) and
 `theseus_agent_disk_degraded`.
 
-The control-plane side of the testbed (`testbed/controlplane.yaml`) is a Prometheus that
-scrapes every agent over `theseus-uplink`, and Grafana provisioned entirely from
+The control-plane side of the testbed (`testbed/controlplane.yaml`) is the sync endpoint
+(`theseus-cp-controlplane-1:50051`, see Sync), a Prometheus that scrapes every agent over
+`theseus-uplink`, and Grafana provisioned entirely from
 `dashboard/`: the datasource, a dashboard provider and `dashboard/dashboards/*.json`. The
 home dashboard, "Theseus fleet", shows per node the uplink (`up`, CUT OFF when severed),
 disk degraded, records written, spool depth and probe failures. Anonymous users can
@@ -142,6 +143,28 @@ number of dropped samples. A failed write's seqs are skipped, never reused.
 
 ## Sync
 
-Connected → Buffering → Handshake (watermark) → Replay (resumable, priority-ordered) →
-Reconcile (dedupe, HLC order). Month 1 uses naive full-state sync behind a `Syncer`
-interface as the measured baseline.
+Target design: Connected → Buffering → Handshake (watermark) → Replay (resumable,
+priority-ordered) → Reconcile (dedupe, HLC order).
+
+Month 1 ships the baseline, `sync.Naive`, behind the `sync.Syncer` interface that delta
+sync will also implement. Every `-sync-interval` (30 s) the agent streams its whole spool,
+in seq order and 256 KiB chunks, to the control plane's `SyncService.Upload`
+(`schema/v1/sync.proto`, gRPC). The control plane (`controlplane.Server`,
+`cmd/theseus-controlplane`) stores each chunk in one SQLite transaction with
+`INSERT OR IGNORE` on `(node_id, seq)` and answers with received / new / duplicate
+counts. Only then does the agent delete the spool up to the last seq it sent. While the
+uplink is down the spool simply grows; the first sync after it returns carries the
+whole backlog.
+
+What makes it naive, on purpose: no handshake (the node never learns what the centre
+already holds), no priority order (an incident waits behind every older sample), no
+resume (an upload cut off halfway is resent from the start; the centre drops the
+repeats and counts them as duplicates). Both sides log every sync's records, bytes
+(protobuf payload, and on the agent also bytes on the TCP connection) and duration;
+BENCHMARKS.md has the numbers delta sync has to beat.
+
+A cut uplink drops packets rather than resetting connections, so the client sends
+keepalive pings during an upload (10 s, 5 s timeout; the server permits them) and caps
+gRPC's reconnect backoff at 10 s: a sync fails within ~30 s of a cut instead of hanging,
+and the first sync after a heal happens on the next tick. Transport is plaintext and
+unauthenticated for now, fine inside the testbed.

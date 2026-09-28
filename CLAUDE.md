@@ -80,6 +80,12 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
 - Agent `/metrics` (`-listen`, default :9101) is hand-written Prometheus text from
   `Store.WriteMetrics`, no client_golang. Grafana (`testbed/controlplane.yaml`, port 3300)
   is provisioned only from `dashboard/`; edit the dashboard JSON, never the UI.
+- Sync: `sync.Syncer` is the seam; `sync.Naive` (month 1 baseline) uploads the whole
+  spool over gRPC (`SyncService.Upload` in `schema/v1/sync.proto`, generated with
+  `protoc-gen-go-grpc` as a go tool) every `-sync-interval`, and `Store.AckSpool` trims it
+  only after the control plane answers. `controlplane.Server` dedupes on (node_id, seq).
+  Every sync logs records, payload/wire bytes and duration; keep that, it is the baseline.
+  Keepalive + capped backoff exist because a severed uplink blackholes, it doesn't reset.
 - Record numbers in BENCHMARKS.md with the command that reproduces them. `make bench`.
 
 ## Month 1 checkpoints

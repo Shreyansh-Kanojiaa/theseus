@@ -38,7 +38,9 @@ disk > 85%). Alert events are stored and printed to stdout as JSON lines, or sen
 
 3-node testbed (Docker Compose): `make up`, then `make sever NODE=c` / `make heal NODE=c`
 to cut and restore node C's uplink, `make down` to remove everything. The fleet dashboard
-is at http://localhost:3300 (Grafana, no login; `GRAFANA_PORT` to move it).
+is at http://localhost:3300 (Grafana, no login; `GRAFANA_PORT` to move it). Every agent
+uploads its spool to the control plane every 30 s; `docker logs theseus-c-agent-1` shows
+each sync's records, bytes and duration.
 
 ## Layout
 
@@ -47,11 +49,11 @@ is at http://localhost:3300 (Grafana, no login; `GRAFANA_PORT` to move it).
 | `agent/`        | Edge agent: collector, local store, probes, alerts |
 | `cmd/`          | Binaries (`theseus-agent`)                         |
 | `recovery/`     | Recovery engine (rules, graph, Laya, LLM, executor)|
-| `sync/`         | Synchronization engine                             |
+| `sync/`         | Sync engine: `Syncer`, naive full upload (month 1) |
 | `incident/`     | Incident timeline reconstruction                   |
 | `chaos/`        | Fault injection and ground-truth labels            |
 | `dashboard/`    | Grafana dashboards, provisioned as code            |
-| `controlplane/` | Optional control plane                             |
+| `controlplane/` | Optional control plane: gRPC sync endpoint         |
 
 ## License
 

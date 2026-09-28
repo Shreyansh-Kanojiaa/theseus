@@ -19,6 +19,6 @@ Full definitions of done are in [CLAUDE.md](CLAUDE.md).
 - [x] CP6 Local alerts
 - [x] CP7 3-node testbed
 - [x] CP8 Prometheus + Grafana wiring
-- [ ] CP9 Control plane stub + naive full-state sync
+- [x] CP9 Control plane stub + naive full-state sync
 - [ ] CP10 Chaos harness groundwork
 - [ ] CP11 Month 1 acceptance test

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Shreyansh-Kanojiaa/theseus/agent"
+	tsync "github.com/Shreyansh-Kanojiaa/theseus/sync"
 )
 
 func main() {
@@ -26,6 +27,8 @@ func main() {
 		ballast     = flag.Int64("ballast", 64<<20, "bytes preallocated in <data>/ballast and freed when the disk fills; 0 disables")
 		node        = flag.String("node", host, "node id")
 		listen      = flag.String("listen", ":9101", "address serving the agent's own /metrics; empty disables")
+		syncTo      = flag.String("sync", "", "control plane gRPC address (host:port) to upload the spool to; empty disables")
+		syncEvery   = flag.Duration("sync-interval", 30*time.Second, "how often to upload the spool")
 		proc        = flag.String("proc", "/proc", "procfs root (the host's /proc when containerised)")
 		mounts      = flag.String("mounts", "/", "comma-separated mountpoints to report disk usage for")
 		docker      = flag.String("docker", "/var/run/docker.sock", "Docker socket; empty disables container state")
@@ -70,6 +73,14 @@ func main() {
 	defer stop()
 
 	var wg sync.WaitGroup
+	if *syncTo != "" {
+		syncer, err := tsync.NewNaive(s, *syncTo)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer func() { _ = syncer.Close() }()
+		wg.Go(func() { tsync.Run(ctx, syncer, *syncEvery, 5*time.Minute) })
+	}
 	if *listen != "" {
 		wg.Go(func() { serveMetrics(ctx, *listen, s) })
 	}

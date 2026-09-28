@@ -1,6 +1,7 @@
-# Control-plane side of the testbed: a Prometheus scraping every agent's own
-# /metrics over theseus-uplink, and Grafana provisioned from dashboard/.
-# A severed node's agent drops to up=0 here while it keeps running locally.
+# Control-plane side of the testbed: the sync endpoint every agent uploads its
+# spool to, a Prometheus scraping every agent's own /metrics, both over
+# theseus-uplink, and Grafana provisioned from dashboard/. A severed node's
+# agent drops to up=0 here while it keeps running and buffering locally.
 #
 #   docker compose -f testbed/controlplane.yaml up -d    (make up does this)
 #   Grafana: http://localhost:3300 (GRAFANA_PORT), anonymous viewer, admin/admin to edit.
@@ -12,6 +13,12 @@ x-cp: &cp
   security_opt: [label=disable] # SELinux hosts: read the bind-mounted config
 
 services:
+  controlplane:
+    <<: *cp
+    image: theseus
+    entrypoint: [theseus-controlplane, -data=/data]
+    volumes: [data:/data]
+
   prometheus:
     <<: *cp
     image: prom/prometheus:v3.5.0
@@ -29,6 +36,9 @@ services:
       - ../dashboard/provisioning:/etc/grafana/provisioning:ro
       - ../dashboard/dashboards:/var/lib/grafana/dashboards:ro
     depends_on: [prometheus]
+
+volumes:
+  data:
 
 networks:
   uplink:

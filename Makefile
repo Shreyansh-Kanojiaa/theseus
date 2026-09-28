@@ -34,12 +34,12 @@ NODES := a b c
 TESTBED = NODE=$$n docker compose -f testbed/node.yaml
 
 image:
-	docker build --network host -t theseus-agent .  # host DNS; some networks block it from the bridge
+	docker build --network host -t theseus .  # host DNS; some networks block it from the bridge
 
 up: image
 	docker network inspect theseus-uplink >/dev/null 2>&1 || docker network create theseus-uplink
-	for n in $(NODES); do $(TESTBED) up -d --wait || exit 1; done
 	docker compose -f testbed/controlplane.yaml up -d --wait
+	for n in $(NODES); do $(TESTBED) up -d --wait || exit 1; done
 
 down:
 	docker compose -f testbed/controlplane.yaml down -v
