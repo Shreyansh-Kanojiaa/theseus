@@ -52,6 +52,8 @@ bin/theseus-chaos revert kill --node c --target prometheus
 make chaos-check                                             # all four, twice each
 ```
 
+Month 1 acceptance, about 35 minutes: `make acceptance` (`SEVER_MINUTES=3` for a quick run).
+
 ## Layout
 
 | Dir             | Module                                             |

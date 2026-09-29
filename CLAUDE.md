@@ -92,6 +92,9 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
   inject and revert. Active faults live in `.chaos/active/`; each revert appends one
   `{fault,node,target,params,start,end}` line to `.chaos/ground-truth.jsonl` (Laya's
   labels, gitignored). disk-fill refuses any volume that isn't the testbed tmpfs.
+- Month 1 acceptance: `make acceptance` (`testbed/acceptance.sh`, `SEVER_MINUTES`, default 30)
+  runs the CP11 scenario from a fresh testbed and exits non-zero if any check fails. It needs
+  sqlite3 on the host and holds the machine awake with systemd-inhibit.
 - Record numbers in BENCHMARKS.md with the command that reproduces them. `make bench`.
 
 ## Month 1 checkpoints

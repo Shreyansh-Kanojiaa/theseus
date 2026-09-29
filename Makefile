@@ -1,7 +1,7 @@
 GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
 BUF := go run github.com/bufbuild/buf/cmd/buf@v1.73.0
 
-.PHONY: build test test-diskfull lint gen bench image up down sever heal chaos-check
+.PHONY: build test test-diskfull lint gen bench image up down sever heal chaos-check acceptance
 
 build:
 	go build ./...
@@ -62,3 +62,9 @@ chaos-check:
 	for i in 1 2; do for f in $(CHAOS_FAULTS); do \
 		bin/theseus-chaos inject $$f --node c && sleep 5 && bin/theseus-chaos revert $$f --node c || exit 1; \
 	done; done
+
+# Month 1 acceptance (CP11): fresh testbed, C severed for SEVER_MINUTES (default
+# 30) with Prometheus killed and its disk filled, then reconnected and checked.
+# Held awake where systemd-inhibit exists: a suspend would stall every node.
+acceptance:
+	$(if $(shell command -v systemd-inhibit),systemd-inhibit --what=sleep:idle --why="theseus acceptance") testbed/acceptance.sh

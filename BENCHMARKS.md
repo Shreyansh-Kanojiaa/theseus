@@ -50,3 +50,18 @@ Steady state (connected, same run): ~380 records per node per sync, ~41 KB paylo
 of 3.1 MB/h/node, before any priority or downsampling. gRPC and HTTP/2 framing add ~2%
 over the protobuf payload. After the sever the control plane held every record node C
 had written, both times: no holes in its seq range.
+
+## Month 1 acceptance (CP11)
+
+`make acceptance` (`testbed/acceptance.sh`): fresh testbed, node C severed for 30 min,
+its Prometheus killed at the start and its disk filled for the second half, then
+reverted and reconnected. Every check passed; the control plane held all 13,207 records
+C had written (0 missing), including the probe_fail, disk_high alert, agent_disk_full
+incident and agent_disk_recovered events it recorded while cut off.
+
+| Date       | Machine                     | Outage | Backlog records | Payload | On the wire | Sync time | Agent RSS (peak) |
+|------------|-----------------------------|--------|-----------------|---------|-------------|-----------|------------------|
+| 2026-09-29 | i5-13450HX, NVMe, Fedora 44 | 30 min | 12,107          | 1.30 MB | 1.33 MB     | 189 ms    | 29 MiB (29 MiB)  |
+
+The backlog is small for 30 minutes because the full disk made C drop samples for 15 of
+them, as designed: 11,101 records in the first 15 min, 272 in the second.
