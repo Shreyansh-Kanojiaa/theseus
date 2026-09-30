@@ -58,17 +58,22 @@ type Store struct {
 	degraded bool
 	dropped  uint64             // samples dropped since degraded mode began
 	pending  []*schemav1.Record // unstamped, oldest first, flushed by the next write
+	keep     map[string]bool    // sample names kept in degraded mode besides the essentials
+	open     *schemav1.Record   // the OPEN agent_disk_full incident, until resolved
+	openHLC  uint64             // open's stored hlc; 0 while it waits in pending
 
 	// Counters for /metrics (see metrics.go), guarded by mu.
-	written    map[string]uint64 // by record type
-	probeFails map[string]uint64 // failed probe results written, by probed target
+	written      map[string]uint64 // by record type
+	probeFails   map[string]uint64 // failed probe results written, by probed target
+	droppedTotal uint64            // samples dropped in degraded mode, ever
 
 	fault func() error // tests only: fails a write after stamping
 }
 
 // OpenStore opens (or creates) the store in dir and allocates a ballast of
 // ballast bytes (0 for none). If the disk is too full for the ballast the
-// store starts in degraded mode.
+// store starts in degraded mode. An agent_disk_full incident a previous run
+// left open is reused if the disk is still full, and resolved if it has room.
 func OpenStore(dir, nodeID string, ballast int64) (*Store, error) {
 	st, err := OpenStamper(filepath.Join(dir, "stamp"), nodeID)
 	if err != nil {
@@ -86,12 +91,20 @@ func OpenStore(dir, nodeID string, ballast int64) (*Store, error) {
 	}
 	s := &Store{db: db, stamp: st, dir: dir, ballast: ballast,
 		written: map[string]uint64{}, probeFails: map[string]uint64{}}
+	if err := s.loadOpen(); err != nil {
+		return nil, errors.Join(err, db.Close())
+	}
 	if err := s.makeBallast(); err != nil {
 		if !isDiskFull(err) {
 			return nil, errors.Join(err, db.Close())
 		}
 		s.enterDegraded(err)
 		if err := s.put(nil); err != nil { // store the incident now if there is room
+			return nil, errors.Join(err, s.Close())
+		}
+	} else if s.open != nil {
+		log.Printf("store: disk has room, resolving incident %s left open by the last run", s.open.GetIncident().IncidentId)
+		if err := s.put([]*schemav1.Record{s.resolveOpen()}); err != nil {
 			return nil, errors.Join(err, s.Close())
 		}
 	}

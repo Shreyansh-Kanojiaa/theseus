@@ -36,12 +36,12 @@ var labelEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
 
 // WriteMetrics writes the agent's own metrics in the Prometheus text format.
 func (s *Store) WriteMetrics(w io.Writer) error {
-	var depth int64
+	var depth uint64
 	if err := s.db.QueryRow(`SELECT count(*) FROM spool`).Scan(&depth); err != nil {
 		return err
 	}
 	s.mu.Lock()
-	written, fails, degraded := maps.Clone(s.written), maps.Clone(s.probeFails), s.degraded
+	written, fails, degraded, dropped := maps.Clone(s.written), maps.Clone(s.probeFails), s.degraded, s.droppedTotal
 	s.mu.Unlock()
 
 	var b strings.Builder
@@ -51,17 +51,18 @@ func (s *Store) WriteMetrics(w io.Writer) error {
 			fmt.Fprintf(&b, "%s{%s=\"%s\"} %d\n", name, label, labelEscaper.Replace(k), m[k])
 		}
 	}
-	gauge := func(name, help string, v int64) {
-		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s gauge\n%s %d\n", name, help, name, name, v)
+	single := func(name, typ, help string, v uint64) {
+		fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s %s\n%s %d\n", name, help, name, typ, name, v)
 	}
 	counter("theseus_agent_records_written_total", "Records written to the local store, by type.", "type", written)
 	counter("theseus_agent_probe_failures_total", "Failed health probes, by target container.", "target", fails)
-	gauge("theseus_agent_spool_depth", "Records in the sync spool, waiting for the control plane to ack them.", depth)
-	d := int64(0)
+	single("theseus_agent_spool_depth", "gauge", "Records in the sync spool, waiting for the control plane to ack them.", depth)
+	d := uint64(0)
 	if degraded {
 		d = 1
 	}
-	gauge("theseus_agent_disk_degraded", "1 while the store is in disk-full degraded mode, dropping samples.", d)
+	single("theseus_agent_disk_degraded", "gauge", "1 while the store is in disk-full degraded mode, dropping non-essential samples.", d)
+	single("theseus_agent_samples_dropped_total", "counter", "Non-essential samples dropped in disk-full degraded mode.", dropped)
 	_, err := io.WriteString(w, b.String())
 	return err
 }

@@ -68,11 +68,16 @@ itself), month 3 delta sync, telemetry priority, LLM tier, ablations, paper and 
   events, stored and sent to stdout or a webhook. YAML is `go.yaml.in/yaml/v3`.
 - Disk-full survival (`agent/diskfull.go`): the store keeps `<data>/ballast` (fallocated,
   `-ballast`, default 64 MiB). The first ENOSPC/SQLITE_FULL deletes it and enters degraded
-  mode: an `agent_disk_full` incident is written, samples are dropped before stamping (and
-  counted), everything else is still written, or held in a 10k in-memory queue (lowest
-  priority evicted first) if even that fails. `Append` does not return disk-full errors.
-  Every 30 s it checks for 2x ballast + 16 MiB free, recreates the ballast and emits
-  `agent_disk_recovered`. Test on a real tmpfs with `make test-diskfull`.
+  mode: an `agent_disk_full` incident (OPEN) is written, non-essential samples are dropped
+  before stamping (and counted), everything else is still written, or held in a 10k
+  in-memory queue (lowest priority evicted first) if even that fails. Essential samples
+  (`host_disk_*`, `host_memory_*`, `up`, `container_running`, and metrics named by alert
+  rules via `Store.KeepSamples`) are kept: they are the incident's evidence. `Append` does
+  not return disk-full errors. Every 30 s it checks for 2x ballast + 16 MiB free, recreates
+  the ballast, and writes the RESOLVED incident (same incident_id, opened_hlc = the OPEN
+  record's stored hlc) with `agent_disk_recovered` in one batch. A restart mid-episode
+  reuses the open incident (still full) or resolves it (room). Test on a real tmpfs with
+  `make test-diskfull`.
 - Testbed (`testbed/node.yaml`, one compose project per node, `make up/down/sever/heal`):
   each node's services sit on an internal network and share a 1 GiB tmpfs `/disk`; only
   the agent joins `theseus-uplink`, so `make sever NODE=c` is one network disconnect.
@@ -114,6 +119,8 @@ CP3: Collector. Host metrics (CPU, mem, disk, net) from gopsutil/procfs, contain
 CP4: Service discovery + health probes. Discover containers through Docker labels (e.g. theseus.probe=http://:9090/-/healthy), support HTTP/TCP/exec probes, and track consecutive failures ("3 misses over 30s" from Figure 2). Done when: you stop a container and see a probe_fail x3 event appear.
 
 CP4.5: Disk-full survival. The store shares the disk the chaos engine fills, and on ENOSPC every Append failed, incidents included. Add a fallocated ballast file freed on the first disk-full error, a degraded mode that drops samples but keeps events, probes and incidents, a bounded in-memory queue for when even those fail, and recovery that recreates the ballast. Done when: make build test lint is green in CI with the 16 MiB tmpfs test running, not skipped.
+
+CP4.6: Disk-full evidence and closure. Degraded mode dropped every sample, including the disk readings its own incident needs as evidence, and the agent_disk_full incident never closed. Keep essential samples (disk, memory, up, container_running, alert-rule metrics) while degraded, export theseus_agent_samples_dropped_total, resolve the incident on recovery under the same incident_id with the OPEN record's stored hlc, and never open a second one across a restart. Done when: make build test lint is green in CI with TestDiskFullTinyFS running, and a full make acceptance passes with the new disk-reading and incident checks.
 
 CP5: Log tail. Keep a ring buffer of the last N log lines per labelled container, and turn keyword matches ("No space left on device", "OOM") into events. Keep it small. Its real job is feeding Laya's evidence bundle in month 2.
 

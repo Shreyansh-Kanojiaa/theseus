@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,10 +11,12 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 
@@ -23,10 +26,10 @@ import (
 // Disk-full survival. The store shares its disk with everything else on the
 // node, so it keeps a ballast file of preallocated blocks. The first write
 // that fails for lack of space deletes the ballast and puts the store in
-// degraded mode: samples are dropped (and counted) before they are stamped,
-// everything else is still written. If even that fails, records wait in a
-// bounded in-memory queue. RunDiskRecovery leaves degraded mode once the disk
-// has room again.
+// degraded mode: non-essential samples are dropped (and counted) before they
+// are stamped, everything else is still written. If even that fails, records
+// wait in a bounded in-memory queue. RunDiskRecovery leaves degraded mode once
+// the disk has room again and resolves the agent_disk_full incident.
 
 // ballastName is the ballast file in the data dir.
 const ballastName = "ballast"
@@ -75,8 +78,30 @@ func (s *Store) makeBallast() error {
 	return nil
 }
 
+// KeepSamples names metrics degraded mode keeps besides the built-in essentials,
+// e.g. the ones alert rules watch. Call it before collection starts.
+func (s *Store) KeepSamples(names ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.keep == nil {
+		s.keep = map[string]bool{}
+	}
+	for _, n := range names {
+		s.keep[n] = true
+	}
+}
+
+// essential reports whether degraded mode keeps a sample: disk and memory
+// readings (the evidence for the disk-full incident), scrape and container
+// liveness, and whatever KeepSamples named.
+func (s *Store) essential(name string) bool {
+	return strings.HasPrefix(name, "host_disk_") || strings.HasPrefix(name, "host_memory_") ||
+		name == "up" || name == "container_running" || s.keep[name]
+}
+
 // enterDegraded frees the ballast, switches to degraded mode and queues the
-// agent_disk_full incident ahead of whatever is written next.
+// agent_disk_full incident ahead of whatever is written next, unless one is
+// already open (left by a run that restarted on a full disk).
 func (s *Store) enterDegraded(cause error) {
 	s.degraded = true
 	freed := "no ballast to free"
@@ -90,24 +115,66 @@ func (s *Store) enterDegraded(cause error) {
 			freed = fmt.Sprintf("could not free ballast: %v", err)
 		}
 	}
-	log.Printf("store: disk full, degraded mode: dropping samples, keeping events (%s): %v", freed, cause)
-	s.pending = append(s.pending, &schemav1.Record{Body: &schemav1.Record_Incident{Incident: &schemav1.Incident{
-		IncidentId: fmt.Sprintf("agent_disk_full-%d", wallClock().UnixMilli()),
-		State:      schemav1.IncidentState_INCIDENT_STATE_OPEN,
+	log.Printf("store: disk full, degraded mode: dropping non-essential samples, keeping events (%s): %v", freed, cause)
+	if s.open != nil {
+		log.Printf("store: incident %s is still open, not opening another", s.open.GetIncident().IncidentId)
+		return
+	}
+	s.open = diskFullIncident(fmt.Sprintf("agent_disk_full-%d", wallClock().UnixMilli()), schemav1.IncidentState_INCIDENT_STATE_OPEN, 0)
+	s.openHLC = 0
+	s.pending = append(s.pending, s.open)
+}
+
+func diskFullIncident(id string, state schemav1.IncidentState, openedHLC uint64) *schemav1.Record {
+	return &schemav1.Record{Body: &schemav1.Record_Incident{Incident: &schemav1.Incident{
+		IncidentId: id,
+		State:      state,
 		Service:    "agent",
 		Summary:    "agent_disk_full",
+		OpenedHlc:  openedHLC,
 		Header:     &schemav1.Header{Priority: schemav1.Priority_PRIORITY_INCIDENT},
-	}}})
+	}}}
+}
+
+// resolveOpen returns the RESOLVED version of the open incident, whose OPEN
+// record must already be stored (openHLC set), and forgets it.
+func (s *Store) resolveOpen() *schemav1.Record {
+	r := diskFullIncident(s.open.GetIncident().IncidentId, schemav1.IncidentState_INCIDENT_STATE_RESOLVED, s.openHLC)
+	s.open, s.openHLC = nil, 0
+	return r
+}
+
+// loadOpen finds an agent_disk_full incident a previous run left open: the
+// latest agent incident, if it is an OPEN agent_disk_full.
+func (s *Store) loadOpen() error {
+	var body []byte
+	err := s.db.QueryRow(`SELECT body FROM events WHERE kind = 'incident' AND source = 'agent'
+		ORDER BY seq DESC LIMIT 1`).Scan(&body)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	r := &schemav1.Record{}
+	if err := proto.Unmarshal(body, r); err != nil {
+		return fmt.Errorf("latest agent incident: %w", err)
+	}
+	if i := r.GetIncident(); i.GetSummary() == "agent_disk_full" && i.GetState() == schemav1.IncidentState_INCIDENT_STATE_OPEN {
+		s.open, s.openHLC = r, r.Header().Hlc
+	}
+	return nil
 }
 
 // put writes recs behind anything pending. Disk-full errors are absorbed:
-// the first enters degraded mode and retries without samples; later ones
-// leave the batch in the pending queue. Other errors are returned.
+// the first enters degraded mode and retries without non-essential samples;
+// later ones leave the batch in the pending queue. Other errors are returned.
 func (s *Store) put(recs []*schemav1.Record) error {
 	if s.degraded {
 		recs = slices.DeleteFunc(slices.Clone(recs), func(r *schemav1.Record) bool {
-			if r.GetSample() != nil {
+			if sm := r.GetSample(); sm != nil && !s.essential(sm.Name) {
 				s.dropped++
+				s.droppedTotal++
 				return true
 			}
 			return false
@@ -122,6 +189,9 @@ func (s *Store) put(recs []*schemav1.Record) error {
 	case err == nil:
 		s.pending = nil
 		s.count(batch)
+		if s.open != nil && s.openHLC == 0 && slices.Contains(batch, s.open) {
+			s.openHLC = s.open.Header().Hlc // as stored: a failed write may have stamped it before
+		}
 		return nil
 	case !isDiskFull(err):
 		return err
@@ -149,8 +219,9 @@ func evict(q []*schemav1.Record, n int) []*schemav1.Record {
 }
 
 // tryRecover leaves degraded mode if the data dir has room for twice the
-// ballast plus headroom: it recreates the ballast, then appends
-// agent_disk_recovered (with the dropped-sample count) behind the pending queue.
+// ballast plus headroom: it recreates the ballast and flushes the pending
+// queue, then appends the RESOLVED agent_disk_full incident and
+// agent_disk_recovered (with the dropped-sample count) in one batch.
 func (s *Store) tryRecover() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -170,15 +241,22 @@ func (s *Store) tryRecover() error {
 		}
 		return err
 	}
+	if err := s.put(nil); err != nil || len(s.pending) > 0 {
+		return err // still full: try again next round
+	}
 	s.degraded = false
 	log.Printf("store: disk has room again, leaving degraded mode (%d samples dropped)", s.dropped)
-	ev := &schemav1.Record{Body: &schemav1.Record_Event{Event: &schemav1.Event{
+	var recs []*schemav1.Record
+	if s.open != nil {
+		recs = append(recs, s.resolveOpen())
+	}
+	recs = append(recs, &schemav1.Record{Body: &schemav1.Record_Event{Event: &schemav1.Event{
 		Kind: "agent_disk_recovered", Source: "agent",
 		Message: fmt.Sprintf("disk has room again, %d samples dropped", s.dropped),
 		Attrs:   map[string]string{"dropped_samples": strconv.FormatUint(s.dropped, 10)},
-	}}}
+	}}})
 	s.dropped = 0
-	return s.put([]*schemav1.Record{ev})
+	return s.put(recs)
 }
 
 // RunDiskRecovery checks every interval, while degraded, whether the disk has

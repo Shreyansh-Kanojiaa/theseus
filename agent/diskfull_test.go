@@ -172,7 +172,7 @@ func TestDegradedMode(t *testing.T) {
 	appendOK(sample("after", 6))
 
 	got := strings.Join(kinds(t, s), " ")
-	if want := "incident a b c probe agent_disk_recovered"; got != want {
+	if want := "incident a b c probe incident agent_disk_recovered"; got != want {
 		t.Fatalf("stored %q, want %q", got, want)
 	}
 	recs := stored(t, s)
@@ -190,6 +190,165 @@ func TestDegradedMode(t *testing.T) {
 	}
 	if fmt.Sprint(names) != "[before after]" {
 		t.Fatalf("samples %v, want [before after]", names)
+	}
+}
+
+// incidents returns the stored agent_disk_full incident records in seq order.
+func incidents(t testing.TB, s *Store) []*schemav1.Record {
+	var out []*schemav1.Record
+	for _, r := range stored(t, s) {
+		if r.GetIncident().GetSummary() == "agent_disk_full" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// checkEpisode fails unless the stored incidents are one OPEN and one RESOLVED
+// with the same id, the RESOLVED one pointing at the OPEN one's stored hlc.
+func checkEpisode(t testing.TB, s *Store) {
+	t.Helper()
+	inc := incidents(t, s)
+	if len(inc) != 2 {
+		t.Fatalf("%d agent_disk_full incident records, want OPEN + RESOLVED: %v", len(inc), inc)
+	}
+	o, r := inc[0].GetIncident(), inc[1].GetIncident()
+	if o.State != schemav1.IncidentState_INCIDENT_STATE_OPEN || r.State != schemav1.IncidentState_INCIDENT_STATE_RESOLVED {
+		t.Fatalf("states %v %v, want OPEN RESOLVED", o.State, r.State)
+	}
+	if o.IncidentId != r.IncidentId || r.Service != "agent" {
+		t.Fatalf("resolved %q (service %q) does not close open %q", r.IncidentId, r.Service, o.IncidentId)
+	}
+	if r.OpenedHlc != inc[0].Header().Hlc || r.OpenedHlc == 0 {
+		t.Fatalf("resolved opened_hlc %d, want the OPEN record's stored hlc %d", r.OpenedHlc, inc[0].Header().Hlc)
+	}
+}
+
+func TestDegradedKeepsEssentialSamples(t *testing.T) {
+	s, err := OpenStore(t.TempDir(), "node-c", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	s.KeepSamples("pg_stat_activity_count") // as an alert rule would
+	calls := 0
+	s.fault = func() error {
+		if calls++; calls == 1 {
+			return errENOSPC
+		}
+		return nil
+	}
+	if err := s.Append(event("a")); err != nil {
+		t.Fatal(err)
+	}
+	keep := []string{"host_disk_used_ratio", "host_memory_used_ratio", "up", "container_running", "pg_stat_activity_count"}
+	var recs []*schemav1.Record
+	for _, n := range append(keep, "node_filesystem_avail_bytes", "host_cpu_used_ratio") {
+		recs = append(recs, sample(n, 1))
+	}
+	if err := s.Append(recs...); err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, r := range stored(t, s) {
+		if sm := r.GetSample(); sm != nil {
+			names = append(names, sm.Name)
+		}
+	}
+	if !s.degraded || fmt.Sprint(names) != fmt.Sprint(keep) || s.dropped != 2 {
+		t.Fatalf("degraded %v stored %v dropped %d, want true %v 2", s.degraded, names, s.dropped, keep)
+	}
+	var b strings.Builder
+	if err := s.WriteMetrics(&b); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "\ntheseus_agent_samples_dropped_total 2\n") {
+		t.Fatalf("metrics lack the dropped count:\n%s", b.String())
+	}
+}
+
+// TestDiskFullIncidentResolved: the OPEN incident waits in memory through
+// failed writes (each stamps it anew), and RESOLVED must carry the hlc it
+// was finally stored with.
+func TestDiskFullIncidentResolved(t *testing.T) {
+	s, err := OpenStore(t.TempDir(), "node-c", 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	s.fault = func() error { return errENOSPC }
+	for _, k := range []string{"a", "b", "c"} {
+		if err := s.Append(event(k)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(s.pending) != 4 || s.openHLC != 0 {
+		t.Fatalf("pending %d openHLC %d, want the incident and 3 events waiting", len(s.pending), s.openHLC)
+	}
+	s.fault = nil
+	if err := s.tryRecover(); err != nil {
+		t.Fatal(err)
+	}
+	if s.degraded || s.open != nil {
+		t.Fatalf("degraded %v open %v after recovery", s.degraded, s.open)
+	}
+	checkEpisode(t, s)
+	if got := strings.Join(kinds(t, s), " "); got != "incident a b c incident agent_disk_recovered" {
+		t.Fatalf("stored %q", got)
+	}
+}
+
+// TestDiskFullRestartWhileOpen: an agent restarting mid-episode must not open
+// a second incident, whether the disk is still full or has room by then.
+func TestDiskFullRestartWhileOpen(t *testing.T) {
+	for _, stillFull := range []bool{true, false} {
+		t.Run(fmt.Sprint("stillFull=", stillFull), func(t *testing.T) {
+			dir := t.TempDir()
+			s, err := OpenStore(dir, "node-c", 1<<20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			s.fault = func() error {
+				if calls++; calls == 1 {
+					return errENOSPC
+				}
+				return nil
+			}
+			if err := s.Append(event("a")); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			ballast := int64(1 << 20)
+			if stillFull { // a ballast bigger than the free space cannot be allocated
+				var st unix.Statfs_t
+				if err := unix.Statfs(dir, &st); err != nil {
+					t.Fatal(err)
+				}
+				ballast = int64(st.Bavail*uint64(st.Bsize)) + 1<<30
+			}
+			s, err = OpenStore(dir, "node-c", ballast)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = s.Close() }()
+			if stillFull {
+				if !s.degraded || s.open == nil || len(incidents(t, s)) != 1 {
+					t.Fatalf("degraded %v open %v incidents %d, want the old one reused", s.degraded, s.open, len(incidents(t, s)))
+				}
+				s.ballast = 1 << 20 // the disk frees up
+				if err := s.tryRecover(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if s.degraded || s.open != nil {
+				t.Fatalf("degraded %v open %v, want the episode closed", s.degraded, s.open)
+			}
+			checkEpisode(t, s)
+		})
 	}
 }
 
@@ -309,7 +468,8 @@ func TestDiskFullTinyFS(t *testing.T) {
 		t.Helper()
 		e := event(fmt.Sprint("tick", i))
 		events = append(events, e)
-		if err := s.Append(sample("m", float64(i)), sample("n", float64(i)), e); err != nil {
+		disk := sample("host_disk_used_ratio", float64(i)) // essential: kept while degraded
+		if err := s.Append(sample("m", float64(i)), sample("n", float64(i)), disk, e); err != nil {
 			t.Fatalf("round %d: %v", i, err)
 		}
 	}
@@ -401,8 +561,20 @@ func TestDiskFullTinyFS(t *testing.T) {
 		round(i)
 		i++
 	}
-	if countSamples(); samples != before+10 {
-		t.Fatalf("samples after recovery: %d -> %d, want +10", before, samples)
+	if countSamples(); samples != before+15 {
+		t.Fatalf("samples after recovery: %d -> %d, want +15", before, samples)
+	}
+
+	// The disk readings kept while degraded, and the episode closed.
+	checkEpisode(t, s)
+	inc := incidents(t, s)
+	var inWindow int
+	if err := s.db.QueryRow(`SELECT count(*) FROM samples WHERE name = 'host_disk_used_ratio' AND hlc > ? AND hlc < ?`,
+		inc[0].Header().Hlc, inc[1].Header().Hlc).Scan(&inWindow); err != nil {
+		t.Fatal(err)
+	}
+	if inWindow == 0 {
+		t.Fatal("no host_disk_used_ratio samples stored while degraded")
 	}
 
 	var recovered bool
@@ -423,5 +595,6 @@ func TestDiskFullTinyFS(t *testing.T) {
 			t.Fatalf("event %d has seq %d after %d", j, events[j].Header().Seq, events[j-1].Header().Seq)
 		}
 	}
-	t.Logf("recovered: ballast back, %d events stored in seq order, %d samples dropped", len(events), dropped)
+	t.Logf("recovered: ballast back, %d events stored in seq order, %d disk readings kept and %d samples dropped while degraded",
+		len(events), inWindow, dropped)
 }

@@ -55,13 +55,17 @@ had written, both times: no holes in its seq range.
 
 `make acceptance` (`testbed/acceptance.sh`): fresh testbed, node C severed for 30 min,
 its Prometheus killed at the start and its disk filled for the second half, then
-reverted and reconnected. Every check passed; the control plane held all 13,207 records
+reverted and reconnected. Every check passed; the control plane held all 13,848 records
 C had written (0 missing), including the probe_fail, disk_high alert, agent_disk_full
-incident and agent_disk_recovered events it recorded while cut off.
+incident (OPEN and RESOLVED under one incident_id) and agent_disk_recovered events it
+recorded while cut off, and the 60 host_disk_used_ratio readings from the full-disk half.
 
 | Date       | Machine                     | Outage | Backlog records | Payload | On the wire | Sync time | Agent RSS (peak) |
 |------------|-----------------------------|--------|-----------------|---------|-------------|-----------|------------------|
-| 2026-09-29 | i5-13450HX, NVMe, Fedora 44 | 30 min | 12,107          | 1.30 MB | 1.33 MB     | 189 ms    | 29 MiB (29 MiB)  |
+| 2026-09-30 | i5-13450HX, NVMe, Fedora 44 | 30 min | 12,748          | 1.36 MB | 1.39 MB     | 152 ms    | 29 MiB (29 MiB)  |
 
-The backlog is small for 30 minutes because the full disk made C drop samples for 15 of
-them, as designed: 11,101 records in the first 15 min, 272 in the second.
+Since CP4.6 degraded mode keeps essential samples (disk, memory, `up`,
+`container_running`, alert-rule metrics) and drops the rest: 11,101 records in the first
+15 min, 902 in the second (272 before CP4.6, when every sample was dropped). The full
+node_exporter scrape is most of what a healthy 15 min writes, so the backlog is still
+well under two healthy halves.

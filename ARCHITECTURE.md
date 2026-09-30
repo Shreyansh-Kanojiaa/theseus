@@ -106,7 +106,7 @@ The agent serves its own `/metrics` on `-listen` (default `:9101`), plain Promet
 text written by `Store.WriteMetrics`: `theseus_agent_records_written_total{type}` and
 `theseus_agent_probe_failures_total{target}` (counted as the store writes them, so they
 match what is on disk), `theseus_agent_spool_depth` (rows awaiting sync acks) and
-`theseus_agent_disk_degraded`.
+`theseus_agent_disk_degraded` with `theseus_agent_samples_dropped_total`.
 
 The control-plane side of the testbed (`testbed/controlplane.yaml`) is the sync endpoint
 (`theseus-cp-controlplane-1:50051`, see Sync), a Prometheus that scrapes every agent over
@@ -131,15 +131,26 @@ purpose. `<data>/ballast` holds 64 MiB of preallocated blocks (`-ballast`). The 
 write that fails with ENOSPC or SQLITE_FULL deletes it and puts the store in degraded
 mode:
 
-- an `agent_disk_full` incident is appended;
-- samples are dropped before they are stamped (no seqs burnt) and counted;
+- an `agent_disk_full` incident is appended (OPEN);
+- non-essential samples are dropped before they are stamped (no seqs burnt) and counted
+  (`theseus_agent_samples_dropped_total`);
+- essential samples are kept, because they are the incident's evidence: `host_disk_*`,
+  `host_memory_*`, `up`, `container_running`, and every metric an alert rule watches
+  (passed in with `Store.KeepSamples`);
 - events, probe results and incidents are still written;
 - if even those fail (the fault refilled the freed space), they wait in memory, up to
   10k records, lowest priority evicted first, and are stamped when they finally commit.
 
 Every 30 s a degraded store checks for 2x ballast + 16 MiB free. When it finds it, it
-recreates the ballast, leaves degraded mode and appends `agent_disk_recovered` with the
-number of dropped samples. A failed write's seqs are skipped, never reused.
+recreates the ballast, flushes anything queued in memory and leaves degraded mode. It then
+writes, in one batch, the RESOLVED version of the incident (same `incident_id`,
+`opened_hlc` = the hlc the OPEN record was stored with, which may be later than when the
+disk filled if it waited in memory) and `agent_disk_recovered` with the number of dropped
+samples. A failed write's seqs are skipped, never reused.
+
+An agent that restarts mid-episode finds the open incident (the latest agent incident in
+`events` is an OPEN `agent_disk_full`): if the disk is still full it carries on under that
+id, and if it has room it resolves it at once. One episode, one `incident_id`.
 
 ## Sync
 

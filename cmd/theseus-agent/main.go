@@ -69,6 +69,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	for _, r := range rules {
+		s.KeepSamples(r.Metric) // degraded mode keeps what alerts watch
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
